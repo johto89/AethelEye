@@ -9,15 +9,13 @@ namespace AethelEye.Modules.Seo;
 /// Discovers sitemap.xml through robots.txt and common paths, inspired by recon-web's sitemap
 /// handler. Sitemaps are public by design; this check inventories the exposed URL surface.
 /// </summary>
-public sealed class SitemapCheck : ICheck
+public sealed partial class SitemapCheck : ICheck
 {
-    private static readonly Regex SitemapDirective = new(
-        @"^\s*sitemap\s*:\s*(?<url>\S+)",
-        RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"^\s*sitemap\s*:\s*(?<url>\S+)", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex SitemapDirective();
 
-    private static readonly Regex LocElement = new(
-        @"<(?:(?:[a-z0-9]+):)?loc>\s*(?<url>[^<\s]+)\s*</(?:(?:[a-z0-9]+):)?loc>",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"<(?:(?:[a-z0-9]+):)?loc>\s*(?<url>[^<\s]+)\s*</(?:(?:[a-z0-9]+):)?loc>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex LocElement();
 
     public string Id => "sitemap";
 
@@ -41,7 +39,7 @@ public sealed class SitemapCheck : ICheck
             var robots = await context.Pages.GetAsync(robotsUri, context.CancellationToken);
             if (robots.IsSuccess)
             {
-                foreach (Match match in SitemapDirective.Matches(robots.Text))
+                foreach (Match match in SitemapDirective().Matches(robots.Text))
                 {
                     var value = match.Groups["url"].Value.Trim();
                     if (Uri.TryCreate(value, UriKind.Absolute, out var absolute))
@@ -93,7 +91,7 @@ public sealed class SitemapCheck : ICheck
                 continue;
             }
 
-            var urls = LocElement.Matches(response.Text)
+            var urls = LocElement().Matches(response.Text)
                 .Select(match => match.Groups["url"].Value.Trim())
                 .Where(value => value.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)

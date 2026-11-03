@@ -323,23 +323,8 @@ public sealed class BackupCheck : ICheck
         }
     }
 
-    private static bool LooksLikeSoftNotFound(HttpResponseData candidate, HttpResponseData baseline)
-    {
-        if (candidate.StatusCode != baseline.StatusCode)
-        {
-            return false;
-        }
-
-        if (candidate.Body.Length == baseline.Body.Length
-            && candidate.Text.Equals(baseline.Text, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return baseline.Body.Length > 0
-            && candidate.ContentType?.Contains("html", StringComparison.OrdinalIgnoreCase) == true
-            && Math.Abs(candidate.Body.Length - baseline.Body.Length) <= Math.Max(64, baseline.Body.Length / 20);
-    }
+    private static bool LooksLikeSoftNotFound(HttpResponseData candidate, HttpResponseData baseline) =>
+        Soft404Detector.LooksLikeSoftNotFound(candidate, baseline);
 
     private static string? IdentifyMagic(byte[] body)
     {

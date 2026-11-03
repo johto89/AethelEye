@@ -11,7 +11,7 @@ namespace AethelEye.Modules.Exposure;
 /// Tomcat manager, Swagger/OpenAPI, Spring Actuator, API listings, debug endpoints and default
 /// admin/login pages. It is a detection check only; it does not try credentials or exploit anything.
 /// </summary>
-public sealed class ExposureCheck : ICheck
+public sealed partial class ExposureCheck : ICheck
 {
     private enum Category
     {
@@ -34,9 +34,8 @@ public sealed class ExposureCheck : ICheck
         Func<HttpResponseData, bool> Match,
         string Remediation);
 
-    private static readonly Regex IndexOf = new(
-        @"<title>\s*Index of",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"<title>\s*Index of", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex IndexOf();
 
     private static readonly Probe[] Probes =
     [
@@ -74,12 +73,12 @@ public sealed class ExposureCheck : ICheck
         new("WEB-INF/", "WEB-INF directory listing is exposed",
             "The WEB-INF directory is listable.",
             Severity.High, Category.Config,
-            response => IndexOf.IsMatch(response.Text) || ContainsAny(response, "WEB-INF", "web.xml"),
+            response => IndexOf().IsMatch(response.Text) || ContainsAny(response, "WEB-INF", "web.xml"),
             "Block /WEB-INF at the web server."),
         new("META-INF/", "META-INF directory listing is exposed",
             "The META-INF directory is listable.",
             Severity.High, Category.Config,
-            response => IndexOf.IsMatch(response.Text) || ContainsAny(response, "META-INF", "MANIFEST.MF"),
+            response => IndexOf().IsMatch(response.Text) || ContainsAny(response, "META-INF", "MANIFEST.MF"),
             "Block /META-INF at the web server."),
 
         // Swagger / OpenAPI.
@@ -473,23 +472,8 @@ public sealed class ExposureCheck : ICheck
         }
     }
 
-    private static bool LooksLikeSoftNotFound(HttpResponseData candidate, HttpResponseData baseline)
-    {
-        if (candidate.StatusCode != baseline.StatusCode)
-        {
-            return false;
-        }
-
-        if (candidate.Body.Length == baseline.Body.Length
-            && candidate.Text.Equals(baseline.Text, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return baseline.Body.Length > 0
-            && candidate.ContentType?.Contains("html", StringComparison.OrdinalIgnoreCase) == true
-            && Math.Abs(candidate.Body.Length - baseline.Body.Length) <= Math.Max(64, baseline.Body.Length / 20);
-    }
+    private static bool LooksLikeSoftNotFound(HttpResponseData candidate, HttpResponseData baseline) =>
+        Soft404Detector.LooksLikeSoftNotFound(candidate, baseline);
 
     private static bool ContainsAny(HttpResponseData response, params string[] markers) =>
         markers.Any(marker => response.Text.Contains(marker, StringComparison.OrdinalIgnoreCase));

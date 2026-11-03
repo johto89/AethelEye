@@ -34,7 +34,7 @@ public sealed class ScanReport
         Targets.SelectMany(target => target.Checks).SelectMany(check => check.Findings);
 
     [JsonIgnore]
-    public int FindingCount => AllFindings.Count();
+    public int FindingCount => Targets.Sum(target => target.Checks.Sum(check => check.Findings.Count));
 
     public int CountBySeverity(Severity severity) =>
         AllFindings.Count(finding => finding.Severity == severity);

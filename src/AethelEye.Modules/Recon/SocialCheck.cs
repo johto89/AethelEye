@@ -8,15 +8,13 @@ namespace AethelEye.Modules.Recon;
 /// Extracts public social profiles and email addresses from the target page, inspired by
 /// omnisci3nt's social-media module (MIT). It only reads the page that other checks already fetch.
 /// </summary>
-public sealed class SocialCheck : ICheck
+public sealed partial class SocialCheck : ICheck
 {
-    private static readonly Regex HrefPattern = new(
-        @"href\s*=\s*[""'](?<url>[^""']+)[""']",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"href\s*=\s*[""'](?<url>[^""']+)[""']", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex HrefPattern();
 
-    private static readonly Regex EmailPattern = new(
-        @"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-        RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex EmailPattern();
 
     private static readonly string[] SocialHosts =
     [
@@ -49,7 +47,7 @@ public sealed class SocialCheck : ICheck
         var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var social = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Match match in EmailPattern.Matches(page.Text))
+        foreach (Match match in EmailPattern().Matches(page.Text))
         {
             emails.Add(match.Value.Trim().TrimEnd('.'));
             if (emails.Count >= maxResults)
@@ -58,7 +56,7 @@ public sealed class SocialCheck : ICheck
             }
         }
 
-        foreach (Match match in HrefPattern.Matches(page.Text))
+        foreach (Match match in HrefPattern().Matches(page.Text))
         {
             var value = match.Groups["url"].Value.Trim();
             if (value.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))

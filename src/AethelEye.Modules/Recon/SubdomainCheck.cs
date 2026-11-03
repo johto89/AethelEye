@@ -10,11 +10,10 @@ namespace AethelEye.Modules.Recon;
 /// Certificate Transparency subdomain discovery through crt.sh, with a Hackertarget hostsearch
 /// fallback. This is the passive part of omnisci3nt's subdomain module (MIT); no DNS brute force.
 /// </summary>
-public sealed class SubdomainCheck : ICheck
+public sealed partial class SubdomainCheck : ICheck
 {
-    private static readonly Regex ValidHost = new(
-        @"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ValidHost();
 
     public string Id => "subdomains";
 
@@ -183,7 +182,7 @@ public sealed class SubdomainCheck : ICheck
 
             if (name.Length == 0
                 || name.Length > 253
-                || !ValidHost.IsMatch(name)
+                || !ValidHost().IsMatch(name)
                 || !(name.Equals(domain, StringComparison.OrdinalIgnoreCase)
                      || name.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase)))
             {

@@ -11,23 +11,19 @@ namespace AethelEye.Modules.Cms;
 /// methods (GPL-3.0). It identifies common CMS platforms and versions and reports exposed
 /// admin/login, version-disclosure and configuration-leak endpoints. It does not exploit them.
 /// </summary>
-public sealed class CmsCheck : ICheck
+public sealed partial class CmsCheck : ICheck
 {
-    private static readonly Regex GeneratorVersion = new(
-        @"(?:WordPress|Joomla!?|Drupal|Magento|TYPO3|PrestaShop|OpenCart|Ghost)\s*[/ ]?\s*(?<version>\d+(?:\.\d+){0,3})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"(?:WordPress|Joomla!?|Drupal|Magento|TYPO3|PrestaShop|OpenCart|Ghost)\s*[/ ]?\s*(?<version>\d+(?:\.\d+){0,3})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex GeneratorVersion();
 
-    private static readonly Regex WordPressReadmeVersion = new(
-        @"Version\s+(?<version>\d+(?:\.\d+){0,3})",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"Version\s+(?<version>\d+(?:\.\d+){0,3})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WordPressReadmeVersion();
 
-    private static readonly Regex JoomlaXmlVersion = new(
-        @"<version>\s*(?<version>\d+(?:\.\d+){0,3})\s*</version>",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"<version>\s*(?<version>\d+(?:\.\d+){0,3})\s*</version>", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JoomlaXmlVersion();
 
-    private static readonly Regex DrupalChangelogVersion = new(
-        @"Drupal\s+(?<version>\d+(?:\.\d+){0,3})\s*,",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"Drupal\s+(?<version>\d+(?:\.\d+){0,3})\s*,", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DrupalChangelogVersion();
 
     public string Id => "cms";
 
@@ -347,7 +343,7 @@ public sealed class CmsCheck : ICheck
         var readme = await TryGetAsync(context, "readme.html", result);
         if (readme is { IsSuccess: true })
         {
-            var match = WordPressReadmeVersion.Match(readme.Text);
+            var match = WordPressReadmeVersion().Match(readme.Text);
             if (match.Success)
             {
                 Add(candidates, "WordPress", match.Groups["version"].Value, Confidence.High, "readme.html");
@@ -418,7 +414,7 @@ public sealed class CmsCheck : ICheck
             result);
         if (manifest is { IsSuccess: true })
         {
-            var match = JoomlaXmlVersion.Match(manifest.Text);
+            var match = JoomlaXmlVersion().Match(manifest.Text);
             if (match.Success)
             {
                 Add(candidates, "Joomla", match.Groups["version"].Value, Confidence.High, "joomla.xml");
@@ -459,7 +455,7 @@ public sealed class CmsCheck : ICheck
         var changelog = await TryGetAsync(context, "CHANGELOG.txt", result);
         if (changelog is { IsSuccess: true })
         {
-            var match = DrupalChangelogVersion.Match(changelog.Text);
+            var match = DrupalChangelogVersion().Match(changelog.Text);
             if (match.Success)
             {
                 Add(candidates, "Drupal", match.Groups["version"].Value, Confidence.High, "CHANGELOG.txt");
@@ -610,7 +606,7 @@ public sealed class CmsCheck : ICheck
 
     private static string? VersionFrom(string value)
     {
-        var match = GeneratorVersion.Match(value);
+        var match = GeneratorVersion().Match(value);
         return match.Success ? match.Groups["version"].Value : null;
     }
 
@@ -618,7 +614,7 @@ public sealed class CmsCheck : ICheck
         markers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
 
     private static string Truncate(string value, int length) =>
-        value.Length <= length ? value : value[..length] + "...";
+        Core.StringHelpers.Truncate(value, length);
 
     private sealed class Candidate(string name)
     {

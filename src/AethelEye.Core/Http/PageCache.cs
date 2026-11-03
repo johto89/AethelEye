@@ -1,40 +1,21 @@
+using System.Collections.Concurrent;
+
 namespace AethelEye.Core.Http;
 
-/// <summary>Per-target cache. Checks run sequentially per target, so the simple dictionary is enough.</summary>
+/// <summary>
+/// Per-target page cache. Uses ConcurrentDictionary with Lazy to guarantee each URL is fetched
+/// exactly once, even under concurrent access from multiple checks.
+/// </summary>
 public sealed class PageCache(IScopedHttpClient http)
 {
-    private readonly Dictionary<string, HttpResponseData> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ConcurrentDictionary<string, Lazy<Task<HttpResponseData>>> _cache = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task<HttpResponseData> GetAsync(Uri uri, CancellationToken cancellationToken = default)
+    public Task<HttpResponseData> GetAsync(Uri uri, CancellationToken cancellationToken = default)
     {
         var key = uri.ToString();
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            if (_cache.TryGetValue(key, out var cached))
-            {
-                return cached;
-            }
-        }
-        finally
-        {
-            _gate.Release();
-        }
-
-        var response = await http.GetAsync(uri, cancellationToken);
-
-        await _gate.WaitAsync(cancellationToken);
-        try
-        {
-            _cache[key] = response;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-
-        return response;
+        var lazy = _cache.GetOrAdd(key, _ => new Lazy<Task<HttpResponseData>>(
+            () => http.GetAsync(uri, cancellationToken)));
+        return lazy.Value;
     }
 
     public Task<HttpResponseData> GetAsync(string url, CancellationToken cancellationToken = default) =>

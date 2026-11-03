@@ -7,6 +7,8 @@ public sealed class HttpResponseData
 {
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: false);
 
+    private string? _text;
+
     public required Uri RequestUri { get; init; }
 
     public required Uri FinalUri { get; init; }
@@ -28,7 +30,8 @@ public sealed class HttpResponseData
 
     public bool IsSuccess => StatusCode is >= 200 and <= 299;
 
-    public string Text => Utf8.GetString(Body);
+    /// <summary>UTF-8 decoded body text. The result is cached after the first access.</summary>
+    public string Text => _text ??= Utf8.GetString(Body);
 
     public string? Header(string name) =>
         Headers.TryGetValue(name, out var values) ? string.Join(", ", values) : null;

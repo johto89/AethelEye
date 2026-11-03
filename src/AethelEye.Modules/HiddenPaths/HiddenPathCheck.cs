@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 using AethelEye.Core.Abstractions;
 using AethelEye.Core.Http;
 using AethelEye.Core.Models;
@@ -12,9 +11,6 @@ namespace AethelEye.Modules.HiddenPaths;
 /// </summary>
 public sealed class HiddenPathCheck : ICheck
 {
-    private static readonly Regex TitlePattern = new(
-        @"<title[^>]*>(?<title>.*?)</title>",
-        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
     public string Id => "hidden-paths";
 
@@ -233,43 +229,6 @@ public sealed class HiddenPathCheck : ICheck
         HttpResponseData candidate,
         HttpResponseData baseline,
         string baselinePath,
-        string candidatePath)
-    {
-        if (candidate.StatusCode != baseline.StatusCode)
-        {
-            return false;
-        }
-
-        if (candidate.Body.Length == baseline.Body.Length
-            && candidate.Text.Equals(baseline.Text, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        var candidateTitle = Title(candidate.Text);
-        var baselineTitle = Title(baseline.Text);
-        if (candidateTitle.Length > 0 && candidateTitle == baselineTitle)
-        {
-            return true;
-        }
-
-        var normalizedCandidate = candidate.Text
-            .Replace(candidatePath, baselinePath, StringComparison.OrdinalIgnoreCase);
-        var normalizedBaseline = baseline.Text
-            .Replace(baselinePath, baselinePath, StringComparison.OrdinalIgnoreCase);
-        if (normalizedCandidate.Equals(normalizedBaseline, StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        return baseline.Body.Length > 0
-            && candidate.ContentType?.Contains("html", StringComparison.OrdinalIgnoreCase) == true
-            && Math.Abs(candidate.Body.Length - baseline.Body.Length) <= Math.Max(64, baseline.Body.Length / 20);
-    }
-
-    private static string Title(string html)
-    {
-        var match = TitlePattern.Match(html);
-        return match.Success ? match.Groups["title"].Value.Trim() : string.Empty;
-    }
+        string candidatePath) =>
+        Soft404Detector.LooksLikeSoftNotFound(candidate, baseline, baselinePath, candidatePath);
 }

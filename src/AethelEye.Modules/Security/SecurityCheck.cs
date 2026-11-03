@@ -9,15 +9,13 @@ namespace AethelEye.Modules.Security;
 /// Reviews HTTP security headers, HSTS, cookie flags and security.txt. The checks are inspired by
 /// recon-web's http-security, hsts, cookies and security-txt handlers.
 /// </summary>
-public sealed class SecurityCheck : ICheck
+public sealed partial class SecurityCheck : ICheck
 {
-    private static readonly Regex HstsMaxAge = new(
-        @"max-age\s*=\s*(?<value>\d+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"max-age\s*=\s*(?<value>\d+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex HstsMaxAge();
 
-    private static readonly Regex CookieName = new(
-        @"^\s*(?<name>[^=;,\s]+)\s*=",
-        RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"^\s*(?<name>[^=;,\s]+)\s*=", RegexOptions.CultureInvariant)]
+    private static partial Regex CookieName();
 
     public string Id => "security";
 
@@ -71,7 +69,7 @@ public sealed class SecurityCheck : ICheck
         }
         else if (hsts.Length > 0)
         {
-            var match = HstsMaxAge.Match(hsts);
+            var match = HstsMaxAge().Match(hsts);
             var maxAge = match.Success && long.TryParse(match.Groups["value"].Value, out var value)
                 ? value
                 : 0;
@@ -190,7 +188,7 @@ public sealed class SecurityCheck : ICheck
 
         foreach (var cookie in cookies)
         {
-            var match = CookieName.Match(cookie);
+            var match = CookieName().Match(cookie);
             var name = match.Success ? match.Groups["name"].Value : "cookie";
             names.Add(name);
             var lower = cookie.ToLowerInvariant();
@@ -346,5 +344,5 @@ public sealed class SecurityCheck : ICheck
             : string.Empty;
 
     private static string Truncate(string value, int length) =>
-        value.Length <= length ? value : value[..length] + "...";
+        Core.StringHelpers.Truncate(value, length);
 }

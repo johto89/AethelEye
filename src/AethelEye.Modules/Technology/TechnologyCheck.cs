@@ -475,7 +475,7 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
     }
 
     private static string Truncate(string value, int length) =>
-        value.Length <= length ? value : value[..length] + "...";
+        Core.StringHelpers.Truncate(value, length);
 
     private async Task<BrowserCapture?> TryCaptureAsync(
         ICheckContext context,

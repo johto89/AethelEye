@@ -9,21 +9,18 @@ namespace AethelEye.Modules.Recon;
 /// Passive DNS and email-authentication inventory inspired by omnisci3nt's dns and DMARC modules
 /// (MIT). It records A/AAAA/MX/NS/TXT/CNAME/CAA data and flags missing or weak SPF/DMARC records.
 /// </summary>
-public sealed class DnsReconCheck : ICheck
+public sealed partial class DnsReconCheck : ICheck
 {
     private static readonly string[] RecordTypes = ["A", "AAAA", "MX", "NS", "TXT", "CNAME", "CAA"];
 
-    private static readonly Regex DmarcPolicy = new(
-        @"(?:^|;)\s*p\s*=\s*(?<value>[^;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"(?:^|;)\s*p\s*=\s*(?<value>[^;]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DmarcPolicy();
 
-    private static readonly Regex DmarcSpPolicy = new(
-        @"(?:^|;)\s*sp\s*=\s*(?<value>[^;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"(?:^|;)\s*sp\s*=\s*(?<value>[^;]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DmarcSpPolicy();
 
-    private static readonly Regex DmarcPercent = new(
-        @"(?:^|;)\s*pct\s*=\s*(?<value>[^;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"(?:^|;)\s*pct\s*=\s*(?<value>[^;]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DmarcPercent();
 
     public string Id => "dns";
 
@@ -234,9 +231,9 @@ public sealed class DnsReconCheck : ICheck
         }
         else
         {
-            var policy = DmarcPolicy.Match(dmarc).Groups["value"].Value.Trim().ToLowerInvariant();
-            var spPolicy = DmarcSpPolicy.Match(dmarc).Groups["value"].Value.Trim().ToLowerInvariant();
-            var percent = DmarcPercent.Match(dmarc).Groups["value"].Value.Trim();
+            var policy = DmarcPolicy().Match(dmarc).Groups["value"].Value.Trim().ToLowerInvariant();
+            var spPolicy = DmarcSpPolicy().Match(dmarc).Groups["value"].Value.Trim().ToLowerInvariant();
+            var percent = DmarcPercent().Match(dmarc).Groups["value"].Value.Trim();
             if (policy is "none" or "")
             {
                 result.Findings.Add(new Finding

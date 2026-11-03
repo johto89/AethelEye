@@ -454,7 +454,5 @@ public sealed class GitHubCheck : ICheck
     }
 
     private static string Truncate(string? value, int length) =>
-        string.IsNullOrEmpty(value) ? string.Empty
-        : value.Length <= length ? value
-        : value[..length] + "...";
+        Core.StringHelpers.Truncate(value, length);
 }
