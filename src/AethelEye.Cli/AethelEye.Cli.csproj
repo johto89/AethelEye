@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>AethelEye.Cli</RootNamespace>
+    <AssemblyName>aetheleye</AssemblyName>
+    <Description>AETHELeye - omniscient reconnaissance framework for the modern era.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AethelEye.Core\AethelEye.Core.csproj" />
+    <ProjectReference Include="..\AethelEye.Modules\AethelEye.Modules.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\appsettings.json" Link="appsettings.json"
+          CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\appsettings.json')" />
+  </ItemGroup>
+</Project>

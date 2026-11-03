@@ -1,0 +1,111 @@
+using AethelEye.Core.Models;
+
+namespace AethelEye.Modules.HiddenPaths;
+
+public enum HiddenPathValidation
+{
+    None,
+    Contains,
+    Regex,
+    EnvFile,
+    SqlDump,
+}
+
+public sealed record HiddenPath(
+    string Path,
+    Severity Severity,
+    HiddenPathValidation Validation,
+    string? Marker,
+    string Description,
+    bool AllowHtml = false);
+
+/// <summary>
+/// Built-in word list for exposed source control, backups, environment files and debug endpoints.
+/// Markers are what turn a 200 response into high confidence instead of a guess.
+/// </summary>
+public static class HiddenPathCatalog
+{
+    public static IReadOnlyList<HiddenPath> All { get; } =
+    [
+        new("/.git/HEAD", Severity.High, HiddenPathValidation.Regex,
+            @"^(ref:\s*refs/|[0-9a-f]{40})", "Git metadata is exposed."),
+        new("/.git/config", Severity.High, HiddenPathValidation.Contains,
+            "[core]", "Git configuration is exposed."),
+        new("/.git/", Severity.High, HiddenPathValidation.Contains,
+            "Index of", "Git directory listing is exposed."),
+        new("/.svn/entries", Severity.Medium, HiddenPathValidation.Contains,
+            "Index of", "Subversion metadata is exposed.", AllowHtml: true),
+        new("/.svn/", Severity.Medium, HiddenPathValidation.Contains,
+            "Index of", "Subversion directory listing is exposed.", AllowHtml: true),
+        new("/.hg/requires", Severity.Medium, HiddenPathValidation.Regex,
+            @"(revlog|store)", "Mercurial metadata is exposed."),
+        new("/.env", Severity.Critical, HiddenPathValidation.EnvFile,
+            null, "Environment file is exposed and may contain credentials."),
+        new("/.env.local", Severity.Critical, HiddenPathValidation.EnvFile,
+            null, "Local environment file is exposed and may contain credentials."),
+        new("/.env.production", Severity.Critical, HiddenPathValidation.EnvFile,
+            null, "Production environment file is exposed and may contain credentials."),
+        new("/.env.backup", Severity.Critical, HiddenPathValidation.EnvFile,
+            null, "Environment backup is exposed and may contain credentials."),
+        new("/.aws/credentials", Severity.Critical, HiddenPathValidation.Contains,
+            "aws_access_key_id", "AWS credential file is exposed."),
+        new("/.ssh/id_rsa", Severity.Critical, HiddenPathValidation.Contains,
+            "PRIVATE KEY", "SSH private key is exposed."),
+        new("/id_rsa", Severity.Critical, HiddenPathValidation.Contains,
+            "PRIVATE KEY", "SSH private key is exposed."),
+        new("/id_rsa.bak", Severity.Critical, HiddenPathValidation.Contains,
+            "PRIVATE KEY", "SSH private key backup is exposed."),
+        new("/phpinfo.php", Severity.High, HiddenPathValidation.Contains,
+            "PHP Version", "phpinfo() exposes server and configuration details."),
+        new("/server-status", Severity.Medium, HiddenPathValidation.Contains,
+            "Apache Server Status", "Apache server-status is exposed.", AllowHtml: true),
+        new("/actuator/env", Severity.High, HiddenPathValidation.Contains,
+            "propertySources", "Spring Boot actuator environment is exposed."),
+        new("/actuator/health", Severity.Low, HiddenPathValidation.Contains,
+            "\"status\"", "Spring Boot actuator health endpoint is exposed."),
+        new("/config.php.bak", Severity.High, HiddenPathValidation.Regex,
+            @"(DB_PASSWORD|<\?php)", "PHP configuration backup is exposed."),
+        new("/wp-config.php.bak", Severity.High, HiddenPathValidation.Regex,
+            @"(DB_PASSWORD|<\?php)", "WordPress configuration backup is exposed."),
+        new("/wp-config.php~", Severity.High, HiddenPathValidation.Regex,
+            @"(DB_PASSWORD|<\?php)", "WordPress configuration editor backup is exposed."),
+        new("/web.config.bak", Severity.High, HiddenPathValidation.Contains,
+            "<configuration", "ASP.NET configuration backup is exposed."),
+        new("/appsettings.json", Severity.Medium, HiddenPathValidation.Contains,
+            "ConnectionStrings", "Application settings may be exposed."),
+        new("/docker-compose.yml", Severity.Medium, HiddenPathValidation.Contains,
+            "services:", "Container configuration is exposed."),
+        new("/Dockerfile", Severity.Low, HiddenPathValidation.Contains,
+            "FROM ", "Build configuration is exposed."),
+        new("/composer.json", Severity.Low, HiddenPathValidation.Contains,
+            "\"require\"", "PHP dependency manifest is exposed."),
+        new("/package.json", Severity.Low, HiddenPathValidation.Contains,
+            "\"dependencies\"", "Node.js dependency manifest is exposed."),
+        new("/.gitignore", Severity.Low, HiddenPathValidation.None,
+            null, "Repository ignore file is exposed."),
+        new("/.DS_Store", Severity.Low, HiddenPathValidation.Contains,
+            "Bud1", "macOS metadata file is exposed."),
+        new("/backup.zip", Severity.High, HiddenPathValidation.None,
+            null, "Backup archive is exposed."),
+        new("/backup.tar.gz", Severity.High, HiddenPathValidation.None,
+            null, "Backup archive is exposed."),
+        new("/backup.7z", Severity.High, HiddenPathValidation.None,
+            null, "Backup archive is exposed."),
+        new("/www.zip", Severity.High, HiddenPathValidation.None,
+            null, "Web root archive is exposed."),
+        new("/site.zip", Severity.High, HiddenPathValidation.None,
+            null, "Site archive is exposed."),
+        new("/db.sql", Severity.High, HiddenPathValidation.SqlDump,
+            null, "SQL dump is exposed."),
+        new("/database.sql", Severity.High, HiddenPathValidation.SqlDump,
+            null, "SQL dump is exposed."),
+        new("/dump.sql", Severity.High, HiddenPathValidation.SqlDump,
+            null, "SQL dump is exposed."),
+        new("/backup.sql", Severity.High, HiddenPathValidation.SqlDump,
+            null, "SQL dump is exposed."),
+        new("/debug.log", Severity.Low, HiddenPathValidation.None,
+            null, "Debug log is exposed."),
+        new("/error.log", Severity.Low, HiddenPathValidation.None,
+            null, "Error log is exposed."),
+    ];
+}

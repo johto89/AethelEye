@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AethelEye.Modules</RootNamespace>
+    <AssemblyName>AethelEye.Modules</AssemblyName>
+    <Description>OSINT checks: robots.txt, WAF fingerprinting, technology detection, hidden paths, source/dependency analysis, GitHub and leaked accounts.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AethelEye.Core\AethelEye.Core.csproj" />
+    <ProjectReference Include="..\..\..\WappalyzerSharp\src\WappalyzerSharp\WappalyzerSharp.csproj" />
+    <ProjectReference Include="..\..\..\WappalyzerSharp\src\WappalyzerSharp.Headless\WappalyzerSharp.Headless.csproj" />
+    <ProjectReference Include="..\..\..\RetireSharp\src\RetireSharp.Core\RetireSharp.Core.csproj" />
+  </ItemGroup>
+</Project>

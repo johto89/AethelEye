@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AethelEye.Cli/AethelEye.Cli.csproj" />
+    <Project Path="src/AethelEye.Core/AethelEye.Core.csproj" />
+    <Project Path="src/AethelEye.Modules/AethelEye.Modules.csproj" />
+  </Folder>
+  <Project Path="../RetireSharp/src/RetireSharp.Core/RetireSharp.Core.csproj" />
+  <Project Path="../WappalyzerSharp/src/WappalyzerSharp/WappalyzerSharp.csproj" />
+</Solution>

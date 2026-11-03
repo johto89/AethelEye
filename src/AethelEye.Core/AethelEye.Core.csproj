@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AethelEye.Core</RootNamespace>
+    <AssemblyName>AethelEye.Core</AssemblyName>
+    <Description>Core abstractions, engine, scope, HTTP and reporting for the AethelEye framework.</Description>
+  </PropertyGroup>
+</Project>

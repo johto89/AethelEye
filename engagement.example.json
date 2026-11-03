@@ -1,0 +1,123 @@
+{
+  "name": "acme-web",
+  "client": "ACME",
+  "authorizedBy": "Security assessment contract / written authorization reference",
+  "notes": "Only test systems listed in scope. Review findings manually before reporting.",
+  "offline": false,
+  "targets": [
+    "https://example.com"
+  ],
+  "sources": [],
+  "scope": {
+    "allowedHosts": [
+      "example.com"
+    ],
+    "excludedHosts": [],
+    "includeSubdomains": true,
+    "allowPrivateAddresses": false,
+    "allowNonStandardPorts": true
+  },
+  "advisoryDatabasePath": null,
+  "http": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0 Safari/537.36 AethelEye/0.1",
+    "timeoutSeconds": 20,
+    "maxBodyBytes": 5242880,
+    "maxRedirects": 5,
+    "requestsPerSecond": 5,
+    "retries": 2,
+    "externalTimeoutSeconds": 12,
+    "externalRetries": 1,
+    "maxExternalRequests": 100,
+    "insecure": false,
+    "proxy": null,
+    "evasion": false,
+    "randomUserAgent": false,
+    "headers": {}
+  },
+  "browser": {
+    "headless": false,
+    "chromiumPath": null,
+    "disableSandbox": false,
+    "timeoutSeconds": 20
+  },
+  "engine": {
+    "targetConcurrency": 1,
+    "defaultCheckTimeoutSeconds": 120
+  },
+  "checks": {
+    "robots": {
+      "enabled": true
+    },
+    "waf": {
+      "enabled": true,
+      "options": {
+        "activeProbe": true
+      }
+    },
+    "technology": {
+      "enabled": true,
+      "timeoutSeconds": 90,
+      "options": {
+        "maxScripts": 40,
+        "maxInlineScripts": 20,
+        "deep": false,
+        "focus": "all"
+      }
+    },
+    "hidden-paths": {
+      "enabled": true,
+      "options": {
+        "parallelism": 4
+      }
+    },
+    "backup": {
+      "enabled": true,
+      "options": {
+        "names": [],
+        "maxCandidates": 150,
+        "parallelism": 4
+      }
+    },
+    "source": {
+      "enabled": true,
+      "options": {
+        "maxFindings": 200,
+        "deep": false,
+        "focus": "all"
+      }
+    },
+    "github": {
+      "enabled": true
+    },
+    "leaked-accounts": {
+      "enabled": true
+    }
+  },
+  "github": {
+    "token": "",
+    "maxRepositories": 20,
+    "codeSearch": true,
+    "cloneAndScan": false,
+    "gitleaksPath": ""
+  },
+  "leaks": {
+    "hudsonRock": true,
+    "proxyNova": true,
+    "breachDirectory": false,
+    "includeDorks": true,
+    "maxResults": 20
+  },
+  "tools": [
+    {
+      "name": "gitleaks",
+      "path": "C:\\Users\\SOC\\Downloads\\gitleaks-master\\gitleaks.exe"
+    }
+  ],
+  "output": {
+    "directory": "results",
+    "formats": [
+      "text"
+    ],
+    "fileName": "aetheleye-report"
+  }
+}
