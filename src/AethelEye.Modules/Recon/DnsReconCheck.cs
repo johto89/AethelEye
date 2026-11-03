@@ -74,7 +74,8 @@ public sealed partial class DnsReconCheck : ICheck
                     domain,
                     type,
                     context.CancellationToken,
-                    message => result.Notes.Add(message));
+                    message => result.Notes.Add(message),
+                    context.Engagement.Dns.DohProviders);
                 if (values.Count > 0)
                 {
                     records[type] = values.ToList();
@@ -89,7 +90,8 @@ public sealed partial class DnsReconCheck : ICheck
                 "_dmarc." + domain,
                 "TXT",
                 context.CancellationToken,
-                message => result.Notes.Add(message));
+                message => result.Notes.Add(message),
+                context.Engagement.Dns.DohProviders);
         IReadOnlyList<string> dnskey = context.Engagement.Offline
             ? []
             : await DnsOverHttps.QueryAsync(
@@ -97,7 +99,8 @@ public sealed partial class DnsReconCheck : ICheck
                 domain,
                 "DNSKEY",
                 context.CancellationToken,
-                message => result.Notes.Add(message));
+                message => result.Notes.Add(message),
+                context.Engagement.Dns.DohProviders);
         IReadOnlyList<string> ds = context.Engagement.Offline
             ? []
             : await DnsOverHttps.QueryAsync(
@@ -105,7 +108,8 @@ public sealed partial class DnsReconCheck : ICheck
                 domain,
                 "DS",
                 context.CancellationToken,
-                message => result.Notes.Add(message));
+                message => result.Notes.Add(message),
+                context.Engagement.Dns.DohProviders);
         var dnssec = dnskey.Count > 0 || ds.Count > 0;
 
         var txtRecords = records.TryGetValue("TXT", out var txt) ? txt : [];
@@ -210,7 +214,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = "dns",
+                CheckId = Id,
                 Title = "DMARC record is missing",
                 Description =
                     "No _dmarc TXT record with v=DMARC1 was found. Without DMARC, receivers have no " +
@@ -238,7 +242,7 @@ public sealed partial class DnsReconCheck : ICheck
             {
                 result.Findings.Add(new Finding
                 {
-                    CheckId = "dns",
+                    CheckId = Id,
                     Title = "DMARC policy is monitor-only",
                     Description =
                         "The DMARC record exists but p is none or absent, so failing messages are " +
@@ -264,7 +268,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = "dns",
+                CheckId = Id,
                 Title = "SPF record is missing",
                 Description =
                     "No v=spf1 TXT record was found. Receivers cannot use SPF to reject forged " +
@@ -289,7 +293,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = "dns",
+                CheckId = Id,
                 Title = "SPF allows every sender",
                 Description =
                     "The SPF record ends with +all or ?all. This defeats the purpose of SPF and " +

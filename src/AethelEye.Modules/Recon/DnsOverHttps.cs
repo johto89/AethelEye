@@ -5,11 +5,12 @@ namespace AethelEye.Modules.Recon;
 
 /// <summary>
 /// Minimal DNS-over-HTTPS client. It gives MX/TXT/NS/CNAME/CAA records without adding a DNS
-/// package, and honours the configured external HTTP budget. Cloudflare is tried first, then Google.
+/// package, and honours the configured external HTTP budget. Providers are tried in order;
+/// the default list is Cloudflare then Google.
 /// </summary>
 internal static class DnsOverHttps
 {
-    private static readonly (string Name, string Url)[] Providers =
+    private static readonly (string Name, string Url)[] DefaultProviders =
     [
         ("Cloudflare", "https://cloudflare-dns.com/dns-query"),
         ("Google", "https://dns.google/resolve"),
@@ -20,9 +21,13 @@ internal static class DnsOverHttps
         string name,
         string type,
         CancellationToken cancellationToken,
-        Action<string>? warn = null)
+        Action<string>? warn = null,
+        IReadOnlyList<string>? customProviders = null)
     {
-        foreach (var provider in Providers)
+        var providers = customProviders is { Count: > 0 }
+            ? customProviders.Select((url, i) => ($"Custom-{i + 1}", url)).ToArray()
+            : DefaultProviders;
+        foreach (var provider in providers)
         {
             try
             {

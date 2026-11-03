@@ -288,7 +288,7 @@ public sealed partial class SecurityCheck : ICheck
             result.Metrics["securityTxt"] = path;
             result.Findings.Add(new Finding
             {
-                CheckId = "security",
+                CheckId = Id,
                 Title = "security.txt is published",
                 Description =
                     "A security.txt file tells researchers how to report vulnerabilities. " +
@@ -326,7 +326,7 @@ public sealed partial class SecurityCheck : ICheck
     {
         result.Findings.Add(new Finding
         {
-            CheckId = "security",
+            CheckId = Id,
             Title = title,
             Description = description,
             Severity = severity,

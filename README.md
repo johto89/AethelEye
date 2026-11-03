@@ -122,17 +122,23 @@ engagement.json / CLI flags
 - Optional: SQLite is built into Windows 10+ and most Linux distributions; no extra package is needed.
 - PowerShell examples below; use the equivalent shell syntax on Linux.
 
-No NuGet package restore is required by AETHELeye itself. The referenced `WappalyzerSharp` and `RetireSharp` projects are local project references.
+The `WappalyzerSharp` and `RetireSharp` libraries are included as git submodules under `lib/`.
 
 ---
 
 ## Build
 
 ```powershell
-git clone <your-repository-url> AETHELeye
+git clone --recurse-submodules <your-repository-url> AETHELeye
 cd AETHELeye
 
 dotnet build AethelEye.slnx -c Release
+```
+
+If you already cloned without submodules:
+
+```powershell
+git submodule update --init --recursive
 ```
 
 Publish a framework-dependent Windows executable:

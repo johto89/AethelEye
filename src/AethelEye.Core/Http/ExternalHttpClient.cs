@@ -9,17 +9,21 @@ namespace AethelEye.Core.Http;
 public sealed class ExternalHttpClient : IExternalHttpClient
 {
     private readonly HttpClient _client;
-    private const int CircuitThreshold = 3;
 
     private readonly HttpSettings _settings;
     private readonly bool _offline;
+    private readonly int _circuitThreshold;
+    private readonly TimeSpan _circuitCooldown;
     private int _requests;
     private int _consecutiveFailures;
+    private long _circuitOpenedAt;
 
     public ExternalHttpClient(HttpSettings settings, bool offline = false)
     {
         _settings = settings;
         _offline = offline;
+        _circuitThreshold = Math.Max(1, settings.CircuitBreakerThreshold);
+        _circuitCooldown = TimeSpan.FromSeconds(Math.Max(1, settings.CircuitBreakerCooldownSeconds));
         var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
@@ -67,11 +71,34 @@ public sealed class ExternalHttpClient : IExternalHttpClient
             throw new OfflineException(url);
         }
 
-        if (Volatile.Read(ref _consecutiveFailures) >= CircuitThreshold)
+        if (Volatile.Read(ref _consecutiveFailures) >= _circuitThreshold)
         {
-            throw new HttpRequestException(
-                "External network is unavailable (circuit open). " +
-                "Use --offline or restore connectivity and retry.");
+            var openedTicks = Volatile.Read(ref _circuitOpenedAt);
+            if (openedTicks > 0)
+            {
+                var elapsed = TimeSpan.FromTicks(
+                    System.Diagnostics.Stopwatch.GetTimestamp() - openedTicks)
+                    * (1.0 / System.Diagnostics.Stopwatch.Frequency * TimeSpan.TicksPerSecond);
+                if (elapsed >= _circuitCooldown)
+                {
+                    // Half-open: allow one probe request through
+                    Interlocked.Exchange(ref _consecutiveFailures, 0);
+                    Interlocked.Exchange(ref _circuitOpenedAt, 0);
+                }
+                else
+                {
+                    throw new HttpRequestException(
+                        $"External network is unavailable (circuit open, resets in " +
+                        $"{(_circuitCooldown - elapsed).TotalSeconds:F0}s). " +
+                        "Use --offline or restore connectivity and retry.");
+                }
+            }
+            else
+            {
+                throw new HttpRequestException(
+                    "External network is unavailable (circuit open). " +
+                    "Use --offline or restore connectivity and retry.");
+            }
         }
 
         if (_settings.MaxExternalRequests > 0
@@ -121,11 +148,16 @@ public sealed class ExternalHttpClient : IExternalHttpClient
 
                 if (status >= 500)
                 {
-                    Interlocked.Increment(ref _consecutiveFailures);
+                    if (Interlocked.Increment(ref _consecutiveFailures) >= _circuitThreshold)
+                    {
+                        Interlocked.CompareExchange(ref _circuitOpenedAt,
+                            System.Diagnostics.Stopwatch.GetTimestamp(), 0);
+                    }
                 }
                 else
                 {
                     Interlocked.Exchange(ref _consecutiveFailures, 0);
+                    Interlocked.Exchange(ref _circuitOpenedAt, 0);
                 }
 
                 var (body, truncated) = await ReadBodyAsync(response, timeout.Token);
@@ -160,7 +192,12 @@ public sealed class ExternalHttpClient : IExternalHttpClient
             catch (Exception error) when (error is HttpRequestException or IOException or OperationCanceledException)
             {
                 lastError = error;
-                Interlocked.Increment(ref _consecutiveFailures);
+                if (Interlocked.Increment(ref _consecutiveFailures) >= _circuitThreshold)
+                {
+                    Interlocked.CompareExchange(ref _circuitOpenedAt,
+                        System.Diagnostics.Stopwatch.GetTimestamp(), 0);
+                }
+
                 if (attempt >= attempts)
                 {
                     break;

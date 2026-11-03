@@ -6,8 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\AethelEye.Core\AethelEye.Core.csproj" />
-    <ProjectReference Include="..\..\..\WappalyzerSharp\src\WappalyzerSharp\WappalyzerSharp.csproj" />
-    <ProjectReference Include="..\..\..\WappalyzerSharp\src\WappalyzerSharp.Headless\WappalyzerSharp.Headless.csproj" />
-    <ProjectReference Include="..\..\..\RetireSharp\src\RetireSharp.Core\RetireSharp.Core.csproj" />
+    <ProjectReference Include="..\..\lib\WappalyzerSharp\src\WappalyzerSharp\WappalyzerSharp.csproj" />
+    <ProjectReference Include="..\..\lib\WappalyzerSharp\src\WappalyzerSharp.Headless\WappalyzerSharp.Headless.csproj" />
+    <ProjectReference Include="..\..\lib\RetireSharp\src\RetireSharp.Core\RetireSharp.Core.csproj" />
   </ItemGroup>
 </Project>

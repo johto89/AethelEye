@@ -43,6 +43,8 @@ public sealed class Engagement
     /// <summary>Optional headless Chromium rendering for JavaScript-heavy technology detection.</summary>
     public BrowserSettings Browser { get; set; } = new();
 
+    public DnsSettings Dns { get; set; } = new();
+
     public EngineSettings Engine { get; set; } = new();
 
     public Dictionary<string, CheckSettings> Checks { get; set; } =
@@ -113,6 +115,12 @@ public sealed class HttpSettings
 
     /// <summary>Hard cap on calls to public APIs per scan, so a broken network cannot stall a run.</summary>
     public int MaxExternalRequests { get; set; } = 100;
+
+    /// <summary>Number of consecutive failures before the circuit breaker opens and blocks further requests.</summary>
+    public int CircuitBreakerThreshold { get; set; } = 3;
+
+    /// <summary>Cooldown in seconds before the circuit breaker resets after opening.</summary>
+    public int CircuitBreakerCooldownSeconds { get; set; } = 60;
 
     public bool Insecure { get; set; }
 
@@ -205,6 +213,16 @@ public sealed class ToolSettings
     public required string Name { get; set; }
 
     public required string Path { get; set; }
+}
+
+public sealed class DnsSettings
+{
+    /// <summary>
+    /// Ordered list of DNS-over-HTTPS providers. Each entry is a base URL that accepts
+    /// <c>?name=...&amp;type=...</c> query parameters and returns <c>application/dns-json</c>.
+    /// When empty, the built-in defaults (Cloudflare, then Google) are used.
+    /// </summary>
+    public List<string> DohProviders { get; set; } = [];
 }
 
 public sealed class OutputSettings

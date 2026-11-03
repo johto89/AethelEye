@@ -1,0 +1,7 @@
+[submodule "lib/RetireSharp"]
+	path = lib/RetireSharp
+	url = https://github.com/johto89/RetireSharp.git
+
+[submodule "lib/WappalyzerSharp"]
+	path = lib/WappalyzerSharp
+	url = https://github.com/johto89/WappalyzerSharp.git

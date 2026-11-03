@@ -248,7 +248,7 @@ public sealed class GitHubCheck : ICheck
 
                     result.Findings.Add(new Finding
                     {
-                        CheckId = "github",
+                        CheckId = Id,
                         Title = "Potential secret in public GitHub code",
                         Description =
                             "GitHub code search matched a credential-related query. " +
@@ -415,7 +415,7 @@ public sealed class GitHubCheck : ICheck
 
                 result.Findings.Add(new Finding
                 {
-                    CheckId = "github",
+                    CheckId = Id,
                     Title = "Secret found by gitleaks in a cloned repository",
                     Description = description ?? "gitleaks matched a credential rule.",
                     Severity = severity,
