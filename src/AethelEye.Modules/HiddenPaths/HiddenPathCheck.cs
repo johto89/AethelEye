@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using AethelEye.Core.Abstractions;
 using AethelEye.Core.Http;
 using AethelEye.Core.Models;

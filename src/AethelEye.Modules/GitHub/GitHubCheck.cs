@@ -25,7 +25,7 @@ public sealed class GitHubCheck : ICheck
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
-        var result = new CheckResult { CheckId = Id, CheckName = Name };
+        var result = new CheckResult { CheckId = "github", CheckName = Name };
         if (context.Engagement.Offline)
         {
             result.Status = CheckStatus.Skipped;
@@ -67,7 +67,7 @@ public sealed class GitHubCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "github",
                 Title = "Public GitHub repository references target",
                 Description =
                     "A public repository mentions the target host in its name, description or readme. " +
@@ -248,7 +248,7 @@ public sealed class GitHubCheck : ICheck
 
                     result.Findings.Add(new Finding
                     {
-                        CheckId = Id,
+                        CheckId = "github",
                         Title = "Potential secret in public GitHub code",
                         Description =
                             "GitHub code search matched a credential-related query. " +
@@ -415,7 +415,7 @@ public sealed class GitHubCheck : ICheck
 
                 result.Findings.Add(new Finding
                 {
-                    CheckId = Id,
+                    CheckId = "github",
                     Title = "Secret found by gitleaks in a cloned repository",
                     Description = description ?? "gitleaks matched a credential rule.",
                     Severity = severity,

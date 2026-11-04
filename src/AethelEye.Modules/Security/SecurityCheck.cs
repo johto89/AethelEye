@@ -28,7 +28,7 @@ public sealed partial class SecurityCheck : ICheck
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
-        var result = new CheckResult { CheckId = Id, CheckName = Name };
+        var result = new CheckResult { CheckId = "security", CheckName = Name };
         var page = await context.Pages.GetAsync(context.Target.BaseUri, context.CancellationToken);
         if (!page.IsSuccess)
         {
@@ -288,7 +288,7 @@ public sealed partial class SecurityCheck : ICheck
             result.Metrics["securityTxt"] = path;
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "security",
                 Title = "security.txt is published",
                 Description =
                     "A security.txt file tells researchers how to report vulnerabilities. " +
@@ -326,7 +326,7 @@ public sealed partial class SecurityCheck : ICheck
     {
         result.Findings.Add(new Finding
         {
-            CheckId = Id,
+            CheckId = "security",
             Title = title,
             Description = description,
             Severity = severity,

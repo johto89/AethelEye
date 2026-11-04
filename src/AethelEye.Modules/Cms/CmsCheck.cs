@@ -37,7 +37,7 @@ public sealed partial class CmsCheck : ICheck
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
-        var result = new CheckResult { CheckId = Id, CheckName = Name };
+        var result = new CheckResult { CheckId = "cms", CheckName = Name };
         var candidates = new Dictionary<string, Candidate>(StringComparer.OrdinalIgnoreCase);
 
         var page = await context.Pages.GetAsync(context.Target.BaseUri, context.CancellationToken);
@@ -62,7 +62,7 @@ public sealed partial class CmsCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = $"CMS detected: {candidate.Name}" +
                         (candidate.Version is { Length: > 0 } ? $" {candidate.Version}" : string.Empty),
                 Description =
@@ -277,7 +277,7 @@ public sealed partial class CmsCheck : ICheck
                 Add(candidates, "WordPress", null, Confidence.High, "wp-login.php");
                 AddRisk(result, riskKeys, new Finding
                 {
-                    CheckId = Id,
+                    CheckId = "cms",
                     Title = "CMS login panel is exposed",
                     Description = "A WordPress login page is reachable.",
                     Severity = Severity.Info,
@@ -358,7 +358,7 @@ public sealed partial class CmsCheck : ICheck
         {
             AddRisk(result, riskKeys, new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = "WordPress user enumeration is possible",
                 Description =
                     "The WordPress REST API returned a user list without authentication. " +
@@ -384,7 +384,7 @@ public sealed partial class CmsCheck : ICheck
         {
             AddRisk(result, riskKeys, new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = "WordPress XML-RPC endpoint is enabled",
                 Description =
                     "xmlrpc.php is reachable. XML-RPC can be used for brute-force amplification and " +
@@ -428,7 +428,7 @@ public sealed partial class CmsCheck : ICheck
         {
             AddRisk(result, riskKeys, new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = "Joomla configuration template is exposed",
                 Description =
                     "configuration.php-dist is reachable. It is a template rather than the live " +
@@ -469,7 +469,7 @@ public sealed partial class CmsCheck : ICheck
         {
             AddRisk(result, riskKeys, new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = "Drupal settings.php source is exposed",
                 Description =
                     "sites/default/settings.php is being served as source. It can contain database " +
@@ -501,7 +501,7 @@ public sealed partial class CmsCheck : ICheck
         {
             AddRisk(result, riskKeys, new Finding
             {
-                CheckId = Id,
+                CheckId = "cms",
                 Title = "Magento local.xml configuration is exposed",
                 Description =
                     "app/etc/local.xml is being served. It can contain database credentials and " +
@@ -523,7 +523,7 @@ public sealed partial class CmsCheck : ICheck
 
     private static Finding LoginFinding(ICheckContext context, string cms, string path) => new()
     {
-        CheckId = Id,
+        CheckId = "cms",
         Title = "CMS login panel is exposed",
         Description = $"A {cms} login page is reachable.",
         Severity = Severity.Info,
@@ -535,7 +535,7 @@ public sealed partial class CmsCheck : ICheck
 
     private static Finding VersionDisclosureFinding(ICheckContext context, string cms, string path) => new()
     {
-        CheckId = Id,
+        CheckId = "cms",
         Title = "CMS version is disclosed",
         Description =
             $"{cms} exposes its exact version through {path}. Version disclosure helps an attacker " +

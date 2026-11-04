@@ -32,7 +32,7 @@ public sealed class LeakedAccountsCheck : ICheck
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
-        var result = new CheckResult { CheckId = Id, CheckName = Name };
+        var result = new CheckResult { CheckId = "leaked-accounts", CheckName = Name };
         var settings = context.Engagement.Leaks;
         var domain = context.Target.Host;
 
@@ -146,7 +146,7 @@ public sealed class LeakedAccountsCheck : ICheck
 
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "leaked-accounts",
                 Title = "Info-stealer compromised machines associated with domain",
                 Description =
                     $"HudsonRock reports {count} machine(s) infected by an info-stealer that " +
@@ -224,7 +224,7 @@ public sealed class LeakedAccountsCheck : ICheck
 
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "leaked-accounts",
                 Title = "Compromised credentials containing domain found in public COMB dataset",
                 Description =
                     $"ProxyNova reports {count} line(s) containing the target domain in the " +
@@ -325,7 +325,7 @@ public sealed class LeakedAccountsCheck : ICheck
 
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "leaked-accounts",
                 Title = "Breach records associated with domain",
                 Description =
                     $"BreachDirectory reports {found} record(s) for the target domain. " +

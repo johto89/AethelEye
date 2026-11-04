@@ -33,7 +33,7 @@ public sealed partial class DnsReconCheck : ICheck
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
-        var result = new CheckResult { CheckId = Id, CheckName = Name };
+        var result = new CheckResult { CheckId = "dns", CheckName = Name };
         var domain = ReconSupport.Domain(context.Target);
         if (domain is null)
         {
@@ -149,7 +149,7 @@ public sealed partial class DnsReconCheck : ICheck
 
         result.Findings.Add(new Finding
         {
-            CheckId = Id,
+            CheckId = "dns",
             Title = "DNS and email-authentication records",
             Description =
                 "Public DNS records observed for the target domain. " +
@@ -174,7 +174,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "dns",
                 Title = "DNSSEC is not enabled",
                 Description =
                     "No DNSKEY or DS records were observed. DNSSEC lets resolvers detect forged " +
@@ -214,7 +214,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "dns",
                 Title = "DMARC record is missing",
                 Description =
                     "No _dmarc TXT record with v=DMARC1 was found. Without DMARC, receivers have no " +
@@ -242,7 +242,7 @@ public sealed partial class DnsReconCheck : ICheck
             {
                 result.Findings.Add(new Finding
                 {
-                    CheckId = Id,
+                    CheckId = "dns",
                     Title = "DMARC policy is monitor-only",
                     Description =
                         "The DMARC record exists but p is none or absent, so failing messages are " +
@@ -268,7 +268,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "dns",
                 Title = "SPF record is missing",
                 Description =
                     "No v=spf1 TXT record was found. Receivers cannot use SPF to reject forged " +
@@ -293,7 +293,7 @@ public sealed partial class DnsReconCheck : ICheck
         {
             result.Findings.Add(new Finding
             {
-                CheckId = Id,
+                CheckId = "dns",
                 Title = "SPF allows every sender",
                 Description =
                     "The SPF record ends with +all or ?all. This defeats the purpose of SPF and " +

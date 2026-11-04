@@ -24,8 +24,8 @@ internal static class DnsOverHttps
         Action<string>? warn = null,
         IReadOnlyList<string>? customProviders = null)
     {
-        var providers = customProviders is { Count: > 0 }
-            ? customProviders.Select((url, i) => ($"Custom-{i + 1}", url)).ToArray()
+        IReadOnlyList<(string Name, string Url)> providers = customProviders is { Count: > 0 }
+            ? customProviders.Select((url, i) => (Name: $"Custom-{i + 1}", Url: url)).ToArray()
             : DefaultProviders;
         foreach (var provider in providers)
         {
