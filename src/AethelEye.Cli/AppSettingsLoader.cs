@@ -108,10 +108,9 @@ public static class AppSettingsLoader
             return Path.GetFullPath(settings.DataDirectory);
         }
 
-        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        return string.IsNullOrWhiteSpace(local)
-            ? Path.Combine(Directory.GetCurrentDirectory(), ".aetheleye")
-            : Path.Combine(local, "aetheleye");
+        // Portable default: keep the database and fingerprints next to the executable, so the
+        // whole folder can be copied to another machine and used as-is.
+        return Path.Combine(AppContext.BaseDirectory, "data");
     }
 
     private static void ApplyEnvironment(Engagement engagement)

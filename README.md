@@ -578,14 +578,17 @@ Supported environment variables: `GITHUB_TOKEN`, `BREACHDIRECTORY_API_KEY`, `GIT
 ### Cache
 
 The SQLite advisory database, Wappalyzer fingerprints and Retire repository cache are stored under
-`DataDirectory` (`%LOCALAPPDATA%\aetheleye` by default). For an offline run, build them once online:
+`DataDirectory`, which defaults to a portable `data/` folder next to the executable. For an offline
+run, build them once online:
 
 ```powershell
 aetheleye --update db
 aetheleye --url example.com --mode all --offline
 ```
 
-Copy `aetheleye.db` and `wappalyzer-fingerprints.json` to the isolated machine if needed.
+To copy the tool to another machine, copy the whole folder (including `data/aetheleye.db` and
+`data/wappalyzer-fingerprints.json`). Set `DataDirectory` in `appsettings.json` to override the
+location.
 
 ---
 
