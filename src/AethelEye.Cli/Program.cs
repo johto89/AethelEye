@@ -13,7 +13,7 @@ namespace AethelEye.Cli;
 
 internal static class Program
 {
-    private const string Version = "0.1.0";
+    private const string Version = AethelEye.Core.VersionInfo.Current;
 
     private const string Usage = """
         AETHELeye - Omniscient Reconnaissance Framework for the Modern Era
@@ -71,6 +71,7 @@ internal static class Program
           --exploited         Keep only High/Critical findings in the report.
           --deep              AST-based JavaScript detection (slower, RetireSharp deep scan).
           --verbose           Show check details, evidence and internal HTTP retries
+          --json-log          Emit structured JSON log lines (for SIEM / pipeline ingestion)
           --no-banner         Suppress the ASCII banner (useful in CI)
           --version           Show version
           -h, --help          Show this help
@@ -267,7 +268,7 @@ internal static class Program
 
         var checks = SelectChecks(engagement, options);
 
-        var log = new ConsoleLog(options.Verbose);
+        var log = new ConsoleLog(options.Verbose, jsonOutput: options.JsonLog);
         if (engagement.Offline)
         {
             log.Info("Offline mode: GitHub/leak APIs and live feeds are skipped.");
@@ -300,9 +301,10 @@ internal static class Program
     private static string NormalizeFormat(string value) => value.Trim().ToLowerInvariant() switch
     {
         "json" => "json",
+        "sarif" => "sarif",
         "text" or "txt" => "text",
         _ => throw new ArgumentException(
-            $"Unsupported report format: {value}. Use text or json."),
+            $"Unsupported report format: {value}. Use text, json or sarif."),
     };
 
     private static Engagement? BuildEngagement(CliOptions options)

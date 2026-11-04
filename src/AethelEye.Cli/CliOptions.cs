@@ -53,6 +53,9 @@ public sealed class CliOptions
 
     public bool Verbose { get; set; }
 
+    /// <summary>Emit structured JSON log lines instead of human-readable output.</summary>
+    public bool JsonLog { get; set; }
+
     public bool NoBanner { get; set; }
 
     public bool Help { get; set; }
@@ -145,6 +148,10 @@ public sealed class CliOptions
                 case "--verbose":
                 case "-verbose":
                     options.Verbose = true;
+                    break;
+                case "--json-log":
+                case "-json-log":
+                    options.JsonLog = true;
                     break;
                 case "--no-banner":
                 case "-no-banner":

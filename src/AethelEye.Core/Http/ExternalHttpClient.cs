@@ -76,9 +76,7 @@ public sealed class ExternalHttpClient : IExternalHttpClient
             var openedTicks = Volatile.Read(ref _circuitOpenedAt);
             if (openedTicks > 0)
             {
-                var elapsed = TimeSpan.FromTicks(
-                    System.Diagnostics.Stopwatch.GetTimestamp() - openedTicks)
-                    * (1.0 / System.Diagnostics.Stopwatch.Frequency * TimeSpan.TicksPerSecond);
+                var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(openedTicks);
                 if (elapsed >= _circuitCooldown)
                 {
                     // Half-open: allow one probe request through
@@ -160,17 +158,8 @@ public sealed class ExternalHttpClient : IExternalHttpClient
                     Interlocked.Exchange(ref _circuitOpenedAt, 0);
                 }
 
-                var (body, truncated) = await ReadBodyAsync(response, timeout.Token);
-                var collected = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-                foreach (var header in response.Headers)
-                {
-                    collected[header.Key] = header.Value.ToArray();
-                }
-
-                foreach (var header in response.Content.Headers)
-                {
-                    collected[header.Key] = header.Value.ToArray();
-                }
+                var (body, truncated) = await HttpHelpers.ReadBodyAsync(response, HttpMethod.Get, _settings.MaxBodyBytes, timeout.Token);
+                var collected = HttpHelpers.CollectHeaders(response);
 
                 return new HttpResponseData
                 {
@@ -208,39 +197,6 @@ public sealed class ExternalHttpClient : IExternalHttpClient
         }
 
         throw new HttpRequestException($"External request failed after retries: {url}", lastError);
-    }
-
-    private async Task<(byte[] Body, bool Truncated)> ReadBodyAsync(
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
-    {
-        var limit = _settings.MaxBodyBytes <= 0 ? int.MaxValue : _settings.MaxBodyBytes;
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        var total = 0;
-        var truncated = false;
-
-        while (true)
-        {
-            var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (total + read > limit)
-            {
-                buffer.Write(chunk, 0, Math.Max(0, limit - total));
-                truncated = true;
-                break;
-            }
-
-            buffer.Write(chunk, 0, read);
-            total += read;
-        }
-
-        return (buffer.ToArray(), truncated);
     }
 
     public void Dispose() => _client.Dispose();

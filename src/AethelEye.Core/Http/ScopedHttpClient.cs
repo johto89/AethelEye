@@ -206,8 +206,8 @@ public sealed class ScopedHttpClient : IScopedHttpClient
                     continue;
                 }
 
-                var body = await ReadBodyAsync(response, method, timeout.Token);
-                var headers = CollectHeaders(response);
+                var body = await HttpHelpers.ReadBodyAsync(response, method, _settings.MaxBodyBytes, timeout.Token);
+                var headers = HttpHelpers.CollectHeaders(response);
 
                 return new HttpResponseData
                 {
@@ -227,44 +227,6 @@ public sealed class ScopedHttpClient : IScopedHttpClient
         throw new HttpRequestException($"Redirect limit reached for {uri}.");
     }
 
-    private async Task<(byte[] Body, bool Truncated)> ReadBodyAsync(
-        HttpResponseMessage response,
-        HttpMethod method,
-        CancellationToken cancellationToken)
-    {
-        if (method == HttpMethod.Head)
-        {
-            return ([], false);
-        }
-
-        var limit = _settings.MaxBodyBytes <= 0 ? int.MaxValue : _settings.MaxBodyBytes;
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        var total = 0;
-        var truncated = false;
-
-        while (true)
-        {
-            var read = await stream.ReadAsync(chunk.AsMemory(), cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (total + read > limit)
-            {
-                buffer.Write(chunk, 0, Math.Max(0, limit - total));
-                truncated = true;
-                break;
-            }
-
-            buffer.Write(chunk, 0, read);
-            total += read;
-        }
-
-        return (buffer.ToArray(), truncated);
-    }
 
     private async ValueTask<Stream> ConnectAsync(
         SocketsHttpConnectionContext context,
@@ -320,22 +282,6 @@ public sealed class ScopedHttpClient : IScopedHttpClient
 
         throw new HttpRequestException(
             $"Could not connect to {host}:{context.DnsEndPoint.Port}.", lastError);
-    }
-
-    private static Dictionary<string, string[]> CollectHeaders(HttpResponseMessage response)
-    {
-        var headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        foreach (var header in response.Headers)
-        {
-            headers[header.Key] = header.Value.ToArray();
-        }
-
-        foreach (var header in response.Content.Headers)
-        {
-            headers[header.Key] = header.Value.ToArray();
-        }
-
-        return headers;
     }
 
     private static bool IsRedirect(int status) => status is 301 or 302 or 303 or 307 or 308;

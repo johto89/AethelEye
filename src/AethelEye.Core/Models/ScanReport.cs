@@ -19,7 +19,7 @@ public sealed class ScanReport
 {
     public string Tool { get; init; } = "aetheleye";
 
-    public string Version { get; init; } = "0.1.0";
+    public string Version { get; init; } = VersionInfo.Current;
 
     public required Engagement Engagement { get; init; }
 

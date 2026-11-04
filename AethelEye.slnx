@@ -4,9 +4,6 @@
     <Project Path="src/AethelEye.Core/AethelEye.Core.csproj" />
     <Project Path="src/AethelEye.Modules/AethelEye.Modules.csproj" />
   </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/AethelEye.Core.Tests/AethelEye.Core.Tests.csproj" />
-  </Folder>
   <Folder Name="/lib/">
     <Project Path="lib/RetireSharp/src/RetireSharp.Core/RetireSharp.Core.csproj" />
     <Project Path="lib/WappalyzerSharp/src/WappalyzerSharp/WappalyzerSharp.csproj" />
