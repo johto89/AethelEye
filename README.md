@@ -73,6 +73,7 @@ src/
     Reporting/      JSON, plain text
   AethelEye.Modules/
     Recon/          DNS/SPF/DMARC, RDAP, Certificate Transparency, social
+    Api/            API endpoint discovery (Wayback, CommonCrawl, JS parsing)
     Robots/         robots.txt + sensitive Disallow
     Waf/            WAF/CDN fingerprint (wafw00f-inspired)
     Technology/     WappalyzerSharp + RetireSharp + optional headless Chromium
@@ -277,7 +278,7 @@ tokens.
 | Mode | Checks | When to use |
 |---|---|---|
 | `all` | Everything selected for the inputs; adds `source` when `--src` is present. | Default full assessment. |
-| `web` | `dns`, `rdap`, `subdomains`, `social`, `robots`, `sitemap`, `cms`, `waf`, `technology`, `security`, `exposure`, `hidden-paths`, `backup`. | A web/domain assessment without GitHub, leak APIs or local source. |
+| `web` | `dns`, `rdap`, `subdomains`, `social`, `robots`, `sitemap`, `cms`, `api`, `waf`, `technology`, `security`, `exposure`, `hidden-paths`, `backup`. | A web/domain assessment without GitHub, leak APIs or local source. |
 | `technology` | `technology`, `cms`, `exposure`. | Technology fingerprint, CMS detection and default-page/API/Actuator/debug exposure. |
 | `external` | `github`, `leaked-accounts`. | Public repository and leaked-account OSINT. |
 | `source` | Local source/dependency scan against the advisory database. | A downloaded source tree or `.zip`. |
@@ -291,7 +292,7 @@ external OSINT; `source` is local code/dependency analysis.
 Accepted aliases: `github`, `leaked-account`, `robots`, `waf`, `technology`, `hidden-paths`,
 `cms`, `wordpress`, `joomla`, `drupal`, `magento`, `exposure`, `swagger`, `actuator`, `tomcat`,
 `debug`, `security`, `headers`, `cookies`, `sitemap`, `backup`, `backups`, `dns`, `rdap`,
-`subdomains`, `social`; older names `leaked`, `leaks`, `tech`, `wafw00f`, `hidden`, `paths`, `src`,
+`subdomains`, `social`, `api`, `endpoints`; older names `leaked`, `leaks`, `tech`, `wafw00f`, `hidden`, `paths`, `src`,
 `code`, `deps`.
 
 ### Check-level modes

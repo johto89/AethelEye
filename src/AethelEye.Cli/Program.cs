@@ -30,7 +30,7 @@ internal static class Program
         Modes (comma separated):
           all              all checks (default); adds source when --src is present
           web              domain + target checks: dns, rdap, subdomains, social,
-                           robots, sitemap, cms, waf, technology, security,
+                           robots, sitemap, cms, api, waf, technology, security,
                            exposure, hidden-paths
           technology       Wappalyzer/Retire + CMS + default-page/API/debug exposure
           external         github, leaked-account

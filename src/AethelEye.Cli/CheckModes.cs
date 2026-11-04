@@ -10,7 +10,7 @@ public static class CheckModes
 
     private static readonly string[] DomainChecks = ["dns", "rdap", "subdomains", "social"];
     private static readonly string[] WebChecks =
-        ["robots", "sitemap", "cms", "waf", "technology", "security", "exposure", "hidden-paths",
+        ["robots", "sitemap", "cms", "api", "waf", "technology", "security", "exposure", "hidden-paths",
             "backup", .. DomainChecks];
     private static readonly string[] ExternalChecks = ["github", "leaked-accounts"];
     private static readonly string[] AllWebChecks = [.. WebChecks, .. ExternalChecks];
@@ -122,6 +122,14 @@ public static class CheckModes
                     result.Add("sitemap");
                     break;
 
+                case "api":
+                case "api-recon":
+                case "endpoint":
+                case "endpoints":
+                    RequireWeb(token, hasWebTargets);
+                    result.Add("api");
+                    break;
+
                 case "backup":
                 case "backups":
                 case "backup-files":
@@ -148,7 +156,6 @@ public static class CheckModes
                 case "exposure":
                 case "default-pages":
                 case "default":
-                case "api":
                 case "swagger":
                 case "openapi":
                 case "actuator":

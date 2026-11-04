@@ -14,7 +14,10 @@ texts are not duplicated in this repository.
 | RetireSharp / retire.js / ASTronomical | Apache-2.0 | `Technology`, `Source` checks |
 | gitleaks | MIT | optional external binary |
 | gosearch domain-leak/dorks | GPL-3.0 | `AethelEye.Modules/LeakedAccounts` |
+| OWASP Dependency-Check | Apache-2.0 | component/dependency identification reference |
 | omnisci3nt | MIT | DNS, RDAP, subdomain and social check reference |
+| API-Hunter | MIT | `AethelEye.Modules/Api/ApiReconCheck.cs` |
+| gitrecon | MIT | commit-email harvest reference in `AethelEye.Modules/GitHub` |
 | CMSeeK | GPL-3.0 | CMS detection and version-file reference |
 | recon-web | GPL-2.0-or-later | security-header, cookie, sitemap and security.txt reference |
 | wafw00f | BSD-3-Clause | WAF signature reference |
@@ -111,6 +114,34 @@ No Python code is executed or copied verbatim.
 
 ---
 
+## API-Hunter
+
+- Project: API-Hunter
+- Upstream: https://github.com/ankitmoradiya/API-Hunter
+- Used in: `AethelEye.Modules/Api/ApiReconCheck.cs`
+- License: **MIT**
+- License text: https://github.com/ankitmoradiya/API-Hunter/blob/main/LICENSE
+
+The C# check adapts API-Hunter's multi-source API reconnaissance ideas (Wayback Machine CDX,
+CommonCrawl index, JavaScript bundle parsing, endpoint normalization, HTTP-method inference and
+risk tagging). No Go code is executed or copied verbatim.
+
+---
+
+## OWASP Dependency-Check
+
+- Project: OWASP Dependency-Check
+- Upstream: https://github.com/dependency-check/DependencyCheck
+- Used in: `AethelEye.Modules/Source/SourceCheck.cs` (component-identification reference)
+- License: **Apache-2.0**
+- License text: https://github.com/dependency-check/DependencyCheck/blob/main/LICENSE.txt
+
+The C# source check references Dependency-Check's ecosystem coverage model (lockfiles and manifests
+across Maven, Gradle, NuGet, Python, Go, Rust, etc.) as guidance for extending component
+identification beyond RetireSharp's JavaScript focus. No Java code is executed or copied verbatim.
+
+---
+
 ## CMSeeK
 
 - Project: CMSeeK
@@ -121,6 +152,20 @@ No Python code is executed or copied verbatim.
 
 The C# check adapts CMSeeK's detection methods (headers, generator meta, page source, robots.txt and
 directory/version files). It does not include CMSeeK's exploitation or brute-force modules.
+
+---
+
+## gitrecon
+
+- Project: gitrecon
+- Upstream: https://github.com/atiilla/gitrecon
+- Used in: `AethelEye.Modules/GitHub/GitHubCheck.cs`
+- License: **MIT**
+- License text: https://github.com/atiilla/gitrecon/blob/main/LICENSE
+
+The C# check adapts gitrecon's idea of harvesting author/committer email addresses from public git
+commit history and matching them against the target domain. No JavaScript code is executed or copied
+verbatim.
 
 ---
 

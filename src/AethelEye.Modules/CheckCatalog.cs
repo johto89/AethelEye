@@ -1,4 +1,5 @@
 using AethelEye.Core.Abstractions;
+using AethelEye.Modules.Api;
 using AethelEye.Modules.Backup;
 using AethelEye.Modules.Cms;
 using AethelEye.Modules.Exposure;
@@ -25,6 +26,7 @@ public static class CheckCatalog
         new SubdomainCheck(),
         new RobotsCheck(),
         new SitemapCheck(),
+        new ApiReconCheck(),
         new CmsCheck(),
         new WafCheck(),
         new TechnologyCheck(),

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using AethelEye.Core.Abstractions;
 using AethelEye.Core.Http;
@@ -83,6 +84,11 @@ public sealed class GitHubCheck : ICheck
                 },
                 Remediation = "Confirm ownership and remove sensitive material from public repositories.",
             });
+        }
+
+        if (repositories.Count > 0)
+        {
+            hadError |= await HarvestCommitEmailsAsync(context, repositories, headers, result) > 0;
         }
 
         if (settings.CodeSearch)
@@ -175,6 +181,172 @@ public sealed class GitHubCheck : ICheck
         {
             result.Notes.Add($"GitHub repository response could not be parsed: {error.Message}");
         }
+    }
+
+    private static async Task<int> HarvestCommitEmailsAsync(
+        ICheckContext context,
+        IReadOnlyList<Repository> repositories,
+        IReadOnlyDictionary<string, string> headers,
+        CheckResult result)
+    {
+        var domain = context.Target.Host;
+        var maxRepos = Math.Clamp(context.Settings.GetInt("commitMaxRepos", 10), 1, 20);
+        var perPage = Math.Clamp(context.Settings.GetInt("commitPerPage", 30), 1, 100);
+        var parallelism = Math.Clamp(context.Settings.GetInt("commitParallelism", 3), 1, 10);
+
+        var emails = new ConcurrentDictionary<string, (string Name, string Repo, string Url, string Source)>(
+            StringComparer.OrdinalIgnoreCase);
+        var notes = new ConcurrentBag<string>();
+        var scanned = 0;
+        var failures = 0;
+
+        using var gate = new SemaphoreSlim(parallelism);
+        await Task.WhenAll(repositories.Take(maxRepos).Select(async repository =>
+        {
+            await gate.WaitAsync(context.CancellationToken);
+            try
+            {
+                var url = $"https://api.github.com/repos/{repository.FullName}/commits?per_page={perPage}";
+                HttpResponseData? response;
+                try
+                {
+                    response = await context.ExternalHttp.GetAsync(url, context.CancellationToken, headers);
+                }
+                catch (Exception error) when (error is not OperationCanceledException)
+                {
+                    notes.Add($"GitHub commits ({repository.FullName}) failed: {error.Message}");
+                    Interlocked.Increment(ref failures);
+                    return;
+                }
+
+                if (!response.IsSuccess)
+                {
+                    notes.Add($"GitHub commits ({repository.FullName}) returned HTTP {response.StatusCode}.");
+                    Interlocked.Increment(ref failures);
+                    return;
+                }
+
+                Interlocked.Increment(ref scanned);
+                try
+                {
+                    using var document = JsonDocument.Parse(response.Text);
+                    if (document.RootElement.ValueKind != JsonValueKind.Array)
+                    {
+                        return;
+                    }
+
+                    foreach (var commit in document.RootElement.EnumerateArray())
+                    {
+                        if (!commit.TryGetProperty("commit", out var commitBody)
+                            || commitBody.ValueKind != JsonValueKind.Object)
+                        {
+                            continue;
+                        }
+
+                        AddCommitIdentity(commitBody, "author", repository, emails);
+                        AddCommitIdentity(commitBody, "committer", repository, emails);
+                    }
+                }
+                catch (JsonException error)
+                {
+                    notes.Add($"Commit history could not be parsed for {repository.FullName}: {error.Message}");
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
+
+        foreach (var note in notes.Distinct(StringComparer.OrdinalIgnoreCase).Take(10))
+        {
+            result.Notes.Add(note);
+        }
+
+        result.Metrics["commitReposScanned"] = scanned.ToString();
+        result.Metrics["commitEmails"] = emails.Count.ToString();
+
+        foreach (var (email, info) in emails
+                     .OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var matchesDomain = EmailMatchesDomain(email, domain);
+            result.Findings.Add(new Finding
+            {
+                CheckId = "github",
+                Title = matchesDomain
+                    ? "Email address in public git commits matches target domain"
+                    : "Email address disclosed in public git commits",
+                Description =
+                    "An author or committer email was found in the commit history of a repository " +
+                    "that references the target. Commit emails are public and can be used for " +
+                    "targeted phishing or to map internal naming conventions.",
+                Severity = matchesDomain ? Severity.Low : Severity.Info,
+                Confidence = Confidence.High,
+                Target = context.Target.BaseUrl,
+                Url = info.Url,
+                Evidence = new Dictionary<string, string>
+                {
+                    ["email"] = email,
+                    ["name"] = info.Name,
+                    ["repository"] = info.Repo,
+                    ["source"] = info.Source,
+                    ["matchesDomain"] = matchesDomain ? "yes" : "no",
+                },
+                Remediation =
+                    "Review exposed commit emails and consider removing personal addresses from git " +
+                    "history or using noreply addresses for public commits.",
+            });
+        }
+
+        return failures;
+    }
+
+    private static void AddCommitIdentity(
+        System.Text.Json.JsonElement commit,
+        string role,
+        Repository repository,
+        ConcurrentDictionary<string, (string Name, string Repo, string Url, string Source)> emails)
+    {
+        if (!commit.TryGetProperty(role, out var identity)
+            || identity.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var email = identity.TryGetProperty("email", out var emailValue)
+                && emailValue.ValueKind == JsonValueKind.String
+            ? emailValue.GetString()
+            : null;
+        var name = identity.TryGetProperty("name", out var nameValue)
+                && nameValue.ValueKind == JsonValueKind.String
+            ? nameValue.GetString()
+            : string.Empty;
+
+        if (string.IsNullOrWhiteSpace(email)
+            || IsNoreply(email))
+        {
+            return;
+        }
+
+        emails.TryAdd(email, (name ?? string.Empty, repository.FullName, repository.Url, role));
+    }
+
+    private static bool IsNoreply(string email) =>
+        email.Contains("noreply", StringComparison.OrdinalIgnoreCase)
+        || email.Contains("users.noreply.github.com", StringComparison.OrdinalIgnoreCase)
+        || email.Contains("bot", StringComparison.OrdinalIgnoreCase);
+
+    private static bool EmailMatchesDomain(string email, string domain)
+    {
+        var at = email.LastIndexOf('@');
+        if (at < 0 || at >= email.Length - 1)
+        {
+            return false;
+        }
+
+        var emailDomain = email[(at + 1)..].TrimEnd('.');
+        return emailDomain.Equals(domain, StringComparison.OrdinalIgnoreCase)
+            || emailDomain.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<int> SearchCodeAsync(
