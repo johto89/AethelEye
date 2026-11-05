@@ -34,7 +34,10 @@ internal static class Program
                            robots, sitemap, cms, api, waf, technology, security,
                            exposure, hidden-paths
           technology       Wappalyzer/Retire + CMS + default-page/API/debug exposure
+                           (same as fingerprint,cms,exposure)
           fingerprint      Runtime technology detection only (no CMS/exposure)
+          cms              CMS fingerprint only (WordPress/Joomla/Drupal/Magento)
+          exposure         Default admin/API/Tomcat/Swagger/Actuator/debug pages only
           external         github, leaked-account
           source           local source/dependency scan
 

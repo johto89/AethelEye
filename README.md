@@ -286,8 +286,10 @@ tokens.
 |---|---|---|
 | `all` | Everything selected for the inputs; adds `source` when `--src` is present. | Default full assessment. |
 | `web` | `dns`, `rdap`, `subdomains`, `social`, `robots`, `sitemap`, `cms`, `api`, `waf`, `technology`, `security`, `exposure`, `hidden-paths`, `backup`. | A web/domain assessment without GitHub, leak APIs or local source. |
-| `technology` | `technology`, `cms`, `exposure`. | Technology fingerprint, CMS detection and default-page/API/Actuator/debug exposure. |
+| `technology` | `technology`, `cms`, `exposure`. | Full technology workflow: runtime technology, CMS detection and default-page/API/Actuator/debug exposure. |
 | `fingerprint` | `technology` only. | Runtime technology detection without CMS or default-page checks. |
+| `cms` | `cms` only. | CMS fingerprint only (WordPress/Joomla/Drupal/Magento). |
+| `exposure` | `exposure` only. | Default admin/API/Tomcat/Swagger/Actuator/debug pages only. |
 | `external` | `github`, `leaked-accounts`. | Public repository and leaked-account OSINT. |
 | `source` | Local source/dependency scan against the advisory database. | A downloaded source tree or `.zip`. |
 
