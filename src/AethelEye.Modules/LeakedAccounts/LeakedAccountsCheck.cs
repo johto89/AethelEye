@@ -34,7 +34,9 @@ public sealed class LeakedAccountsCheck : ICheck
     {
         var result = new CheckResult { CheckId = "leaked-accounts", CheckName = Name };
         var settings = context.Engagement.Leaks;
-        var domain = context.Target.Host;
+        var domain = string.IsNullOrWhiteSpace(context.Engagement.OsintDomain)
+            ? context.Target.Host
+            : context.Engagement.OsintDomain.Trim();
 
         if (settings.IncludeDorks)
         {

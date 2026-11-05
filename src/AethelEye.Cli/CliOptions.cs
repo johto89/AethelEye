@@ -30,6 +30,9 @@ public sealed class CliOptions
 
     public int? TimeoutSeconds { get; set; }
 
+    /// <summary>HTTP(S) proxy for the target HTTP client and headless Chromium, for example ipproxy:8080.</summary>
+    public string? Proxy { get; set; }
+
     /// <summary>Low-and-slow, browser-like request profile for authorized WAF/IDS testing.</summary>
     public bool Evasion { get; set; }
 
@@ -48,8 +51,25 @@ public sealed class CliOptions
     /// <summary>Extra filename stems for the backup check, for example the application name.</summary>
     public List<string> NameTokens { get; } = [];
 
+    /// <summary>
+    /// Application paths applied to every range host and to root URLs, for example /abc,/xyz.
+    /// </summary>
+    public List<string> Paths { get; } = [];
+
+    /// <summary>Files with one URL, IP, CIDR or range per line (# comments allowed).</summary>
+    public List<string> TargetFiles { get; } = [];
+
     /// <summary>UAT/lab preset: allow private hosts, self-signed TLS and non-standard ports.</summary>
     public bool AllowUat { get; set; }
+
+    /// <summary>Public brand domain for GitHub/leak OSINT when the target is an internal host.</summary>
+    public string? OsintDomain { get; set; }
+
+    /// <summary>Block headless-browser requests to hosts other than the target.</summary>
+    public bool SameOriginOnly { get; set; }
+
+    /// <summary>Opt out of the strict same-origin browser policy that --allow-uat enables.</summary>
+    public bool AllowThirdParty { get; set; }
 
     public bool Verbose { get; set; }
 
@@ -91,6 +111,21 @@ public sealed class CliOptions
                 case "--uat":
                     options.AllowUat = true;
                     break;
+                case "--osint-domain":
+                case "-osint-domain":
+                case "--domain":
+                    options.OsintDomain = NextValue(args, ref index, argument);
+                    break;
+                case "--same-origin-only":
+                case "-same-origin-only":
+                case "--no-third-party":
+                    options.SameOriginOnly = true;
+                    break;
+                case "--allow-third-party":
+                case "-allow-third-party":
+                case "--third-party":
+                    options.AllowThirdParty = true;
+                    break;
                 case "--chromium":
                 case "-chromium":
                     options.Headless = true;
@@ -127,6 +162,22 @@ public sealed class CliOptions
                 case "-name-token":
                 case "-n":
                     AddUrlSet(options.NameTokens, NextValue(args, ref index, argument));
+                    break;
+                case "--path":
+                case "-path":
+                    AddUrlSet(options.Paths, NextValue(args, ref index, argument));
+                    break;
+                case "--target-file":
+                case "-target-file":
+                    options.TargetFiles.Add(NextValue(args, ref index, argument));
+                    break;
+                case "--ip-range":
+                case "-ip-range":
+                    AddUrlSet(options.Urls, NextValue(args, ref index, argument));
+                    break;
+                case "--proxy":
+                case "-proxy":
+                    options.Proxy = NextValue(args, ref index, argument);
                     break;
                 case "--timeout":
                 case "-timeout":
@@ -215,7 +266,8 @@ public sealed class CliOptions
         if (options.Command == "scan"
             && options.Inputs.Count == 0
             && options.Urls.Count == 0
-            && options.Sources.Count == 0)
+            && options.Sources.Count == 0
+            && options.TargetFiles.Count == 0)
         {
             var fallback = Path.Combine(Directory.GetCurrentDirectory(), "engagement.json");
             if (File.Exists(fallback))

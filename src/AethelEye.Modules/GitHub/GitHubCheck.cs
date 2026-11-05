@@ -37,7 +37,9 @@ public sealed class GitHubCheck : ICheck
 
         var settings = context.Engagement.GitHub;
         var token = settings.Token ?? Environment.GetEnvironmentVariable("GITHUB_TOKEN");
-        var domain = context.Target.Host;
+        var domain = string.IsNullOrWhiteSpace(context.Engagement.OsintDomain)
+            ? context.Target.Host
+            : context.Engagement.OsintDomain.Trim();
 
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -189,7 +191,9 @@ public sealed class GitHubCheck : ICheck
         IReadOnlyDictionary<string, string> headers,
         CheckResult result)
     {
-        var domain = context.Target.Host;
+        var domain = string.IsNullOrWhiteSpace(context.Engagement.OsintDomain)
+            ? context.Target.Host
+            : context.Engagement.OsintDomain.Trim();
         var maxRepos = Math.Clamp(context.Settings.GetInt("commitMaxRepos", 10), 1, 20);
         var perPage = Math.Clamp(context.Settings.GetInt("commitPerPage", 30), 1, 100);
         var parallelism = Math.Clamp(context.Settings.GetInt("commitParallelism", 3), 1, 10);

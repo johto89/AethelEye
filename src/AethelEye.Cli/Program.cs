@@ -6,6 +6,7 @@ using AethelEye.Core.Models;
 using AethelEye.Core.Reporting;
 using AethelEye.Modules;
 using AethelEye.Modules.Advisories;
+using AethelEye.Modules.Browser;
 using AethelEye.Modules.Technology;
 using RetireSharp.Advisories;
 
@@ -33,6 +34,7 @@ internal static class Program
                            robots, sitemap, cms, api, waf, technology, security,
                            exposure, hidden-paths
           technology       Wappalyzer/Retire + CMS + default-page/API/debug exposure
+          fingerprint      Runtime technology detection only (no CMS/exposure)
           external         github, leaked-account
           source           local source/dependency scan
 
@@ -49,6 +51,12 @@ internal static class Program
 
         Options:
           --url <value>       Web target. Repeatable, and comma-separated is accepted.
+                              A bare IPv4 range/CIDR/wildcard is expanded too.
+          --ip-range <value>  IPv4 range, CIDR or wildcard: 10.0.0.1-10.0.0.20,
+                              10.0.0.0/24, 10.0.0.*. Repeatable/comma-separated.
+          --path <list>       Application path(s) added to every range host and to
+                              root URLs: --path /abc,/xyz. Repeatable.
+          --target-file <f>   One URL, IP, CIDR or range per line (# comments allowed).
           --src <path>        Local source directory, .zip (extracted locally), .js or manifest. Repeatable.
           --mode <list>       Check mode(s), default: all
           --update db         Download OSV/Retire/KEV/EPSS feeds into the SQLite database.
@@ -56,6 +64,9 @@ internal static class Program
           --offline           Offline scan. No GitHub/leak APIs or live feeds.
           --chromium [path]   Enable headless Chromium; optionally give the executable path.
           --timeout <sec>     HTTP and headless navigation timeout (default: 20).
+          --proxy <url>       HTTP(S) proxy for the target and headless Chromium,
+                              for example ipproxy:8080 or http://ipproxy:8080.
+                              A bare host:port is normalized to http://host:port.
           --evasion           Low-and-slow, browser-like request profile for authorized
                               WAF/IDS testing (not a guarantee of bypass).
           --concurrency <n>   Parallel targets (default: 1).
@@ -66,6 +77,13 @@ internal static class Program
                               Path tokens are derived automatically; an IP is never split.
           --allow-uat         UAT/lab preset: allow private/loopback hosts, self-signed TLS
                               and non-standard ports. Does not bypass scope or authorization.
+                              Also restricts requests to the target origin (no other host,
+                              subdomain or port).
+          --same-origin-only  Restrict HTTP and headless-browser requests to the target origin
+                              (no third-party CDN/analytics traffic).
+          --allow-third-party Opt out of the strict same-origin policy under --allow-uat.
+          --osint-domain <d>  Public brand domain for github/leaked-accounts when the scan
+                              target is an internal host such as an IP or UAT name.
           --out <dir>         Output directory (default: results)
           --format <list>     text,json (default: text)
           --exploited         Keep only High/Critical findings in the report.
@@ -84,6 +102,7 @@ internal static class Program
           aetheleye --url example.com --mode technology --chromium --timeout 30
           aetheleye --url example.com --mode external --offline
           aetheleye --url http://10.0.0.5/abc --url http://10.0.0.5/xyz --mode all --allow-uat
+          aetheleye --ip-range 10.0.0.1-10.0.0.20 --path /abc,/xyz --mode web --allow-uat --concurrency 4
           aetheleye --src C:\downloads\abc.zip --mode source
           aetheleye --url example.com --src C:\downloads\abc.zip --mode all --format json
 
@@ -192,9 +211,25 @@ internal static class Program
             engagement.Http.Insecure = true;
         }
 
+        if (!string.IsNullOrWhiteSpace(options.OsintDomain))
+        {
+            engagement.OsintDomain = options.OsintDomain.Trim();
+        }
+
         if (options.Headless)
         {
             engagement.Browser.Headless = true;
+        }
+
+        if (options.SameOriginOnly)
+        {
+            engagement.Browser.SameOriginOnly = true;
+        }
+        else if (options.AllowUat && !options.AllowThirdParty)
+        {
+            // A UAT scan is a single-target engagement: do not let the HTTP client or browser
+            // contact another host, subdomain or port unless the operator opts in.
+            engagement.Browser.SameOriginOnly = true;
         }
 
         if (!string.IsNullOrWhiteSpace(options.ChromiumPath))
@@ -206,6 +241,13 @@ internal static class Program
         {
             engagement.Http.TimeoutSeconds = timeout;
             engagement.Browser.TimeoutSeconds = timeout;
+        }
+
+        // CLI overrides appsettings/environment. Normalize here so both the .NET client and
+        // Chromium receive a real proxy URL; "ipproxy:8080" alone parses as a URI scheme.
+        if (!string.IsNullOrWhiteSpace(options.Proxy))
+        {
+            engagement.Http.Proxy = ProxyUrl.Normalize(options.Proxy);
         }
 
         if (options.Evasion)
@@ -281,7 +323,10 @@ internal static class Program
             cancellation.Cancel();
         };
 
-        await using var orchestrator = new ScanOrchestrator(checks, log);
+        var browserFetcher = engagement.Browser.Headless
+            ? new ChromiumPageFetcher(engagement, log)
+            : null;
+        await using var orchestrator = new ScanOrchestrator(checks, log, browserFetcher);
         var report = await orchestrator.RunAsync(engagement, dataDirectory, cancellation.Token);
         if (options.Exploited)
         {
@@ -309,7 +354,13 @@ internal static class Program
 
     private static Engagement? BuildEngagement(CliOptions options)
     {
-        if (options.Urls.Count > 0 || options.Sources.Count > 0)
+        var urls = new List<string>(options.Urls);
+        foreach (var file in options.TargetFiles)
+        {
+            urls.AddRange(EngagementLoader.ReadTargetFile(file));
+        }
+
+        if (urls.Count > 0 || options.Sources.Count > 0)
         {
             if (options.Inputs.Count > 0)
             {
@@ -318,8 +369,8 @@ internal static class Program
             }
 
             var sources = ValidateSources(options.Sources);
-            return options.Urls.Count > 0
-                ? EngagementLoader.CreateOneOff(options.Urls, sources)
+            return urls.Count > 0
+                ? EngagementLoader.CreateOneOff(urls, sources, options.Paths)
                 : EngagementLoader.CreateSourceOnly(sources);
         }
 
@@ -349,7 +400,7 @@ internal static class Program
 
         var resolvedSources = ValidateSources(legacySources);
         return legacyUrls.Count > 0
-            ? EngagementLoader.CreateOneOff(legacyUrls, resolvedSources)
+            ? EngagementLoader.CreateOneOff(legacyUrls, resolvedSources, options.Paths)
             : EngagementLoader.CreateSourceOnly(resolvedSources);
     }
 

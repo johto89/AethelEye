@@ -18,14 +18,17 @@ public sealed class ScanOrchestrator : IAsyncDisposable
     private readonly IReadOnlyList<ICheck> _checks;
     private readonly ILog _log;
     private readonly Action<CheckEvent>? _onCheckCompleted;
+    private readonly IBrowserPageFetcher? _browserFetcher;
 
     public ScanOrchestrator(
         IEnumerable<ICheck> checks,
         ILog? log = null,
+        IBrowserPageFetcher? browserFetcher = null,
         Action<CheckEvent>? onCheckCompleted = null)
     {
         _log = log ?? NullLog.Instance;
         _onCheckCompleted = onCheckCompleted;
+        _browserFetcher = browserFetcher;
         _checks = checks
             .GroupBy(check => check.Id, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
@@ -53,7 +56,7 @@ public sealed class ScanOrchestrator : IAsyncDisposable
 
         Directory.CreateDirectory(dataDirectory);
 
-        var scope = new ScopeValidator(engagement.Scope, targets);
+        var scope = new ScopeValidator(engagement.Scope, targets, engagement.Browser.SameOriginOnly);
         var report = new ScanReport
         {
             Engagement = engagement,
@@ -62,6 +65,9 @@ public sealed class ScanOrchestrator : IAsyncDisposable
 
         using var scopedHttp = new ScopedHttpClient(engagement.Http, scope, _log);
         using var externalHttp = new ExternalHttpClient(engagement.Http, engagement.Offline);
+        IScopedHttpClient targetHttp = _browserFetcher is null
+            ? scopedHttp
+            : new BrowserFirstHttpClient(scopedHttp, _browserFetcher, scope);
         var tools = new ExternalToolRunner(engagement.Tools, _log);
 
         // Resolve settings once: Dictionary is not thread-safe when targets run in parallel.
@@ -106,7 +112,7 @@ public sealed class ScanOrchestrator : IAsyncDisposable
                     return;
                 }
 
-                var pages = new PageCache(scopedHttp);
+                var pages = new PageCache(scopedHttp, _browserFetcher);
 
                 foreach (var plan in plans)
                 {
@@ -137,7 +143,7 @@ public sealed class ScanOrchestrator : IAsyncDisposable
                         target,
                         engagement,
                         scope,
-                        scopedHttp,
+                        targetHttp,
                         externalHttp,
                         pages,
                         tools,
@@ -237,6 +243,11 @@ public sealed class ScanOrchestrator : IAsyncDisposable
     /// <summary>Releases check-owned resources such as a headless browser.</summary>
     public async ValueTask DisposeAsync()
     {
+        if (_browserFetcher is not null)
+        {
+            await _browserFetcher.DisposeAsync();
+        }
+
         foreach (var check in _checks)
         {
             if (check is IAsyncDisposable asyncDisposable)

@@ -32,19 +32,13 @@ public sealed class BackupCheck : ICheck
         "index.html", "index.php", "index.htm",
     };
 
-    private static readonly HashSet<string> ArchiveContentTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> SqlContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
-        "application/zip",
-        "application/x-rar-compressed",
-        "application/x-7z-compressed",
-        "application/gzip",
-        "application/x-gzip",
-        "application/x-tar",
-        "application/x-bzip2",
-        "application/octet-stream",
         "application/sql",
         "application/x-sql",
         "text/x-sql",
+        "text/plain",
+        "application/octet-stream",
     };
 
     public string Id => "backup";
@@ -60,8 +54,8 @@ public sealed class BackupCheck : ICheck
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
         var result = new CheckResult { CheckId = Id, CheckName = Name };
-        var (tokens, appTokens) = BuildTokens(context);
-        var candidates = BuildCandidates(context, tokens, appTokens);
+        var (tokens, appTokens, nameTokens) = BuildTokens(context);
+        var candidates = BuildCandidates(context, tokens, appTokens, nameTokens);
         var maxCandidates = Math.Clamp(context.Settings.GetInt("maxCandidates", 150), 1, 2000);
         if (candidates.Count > maxCandidates)
         {
@@ -72,6 +66,9 @@ public sealed class BackupCheck : ICheck
 
         result.Metrics["tokens"] = string.Join(", ", tokens);
         result.Metrics["candidates"] = candidates.Count.ToString();
+        result.Metrics["candidateUrls"] = string.Join(
+            ", ",
+            candidates.Select(candidate => context.Target.RootUrl.TrimEnd('/') + candidate));
         result.Notes.Add(
             $"Backup stems: {string.Join(", ", tokens)}. " +
             "An IP address is used whole; it is never split into octets.");
@@ -135,30 +132,32 @@ public sealed class BackupCheck : ICheck
 
                 var magic = IdentifyMagic(response.Body);
                 var contentType = response.ContentType ?? string.Empty;
-                var isArchive = ArchiveContentTypes.Contains(contentType.Split(';')[0].Trim());
-                if (magic is null && !isArchive)
+                if (magic is null)
                 {
-                    return;
-                }
+                    // No binary signature: only a genuine text SQL dump is acceptable. A 200
+                    // response whose body is an HTML/JSON soft-404 page is not a backup, even
+                    // when the server mislabels it as application/zip or octet-stream.
+                    var mediaType = contentType.Split(';')[0].Trim();
+                    if (!SqlContentTypes.Contains(mediaType)
+                        || LooksLikeMarkup(response.Body)
+                        || !LooksLikeSqlDump(response.Body))
+                    {
+                        return;
+                    }
 
-                if (magic is null && response.Body.Length <= 1024)
-                {
-                    return;
+                    magic = "SQL/text database dump";
                 }
 
                 Interlocked.Increment(ref confirmed);
-                var severity = magic is null ? Severity.High : Severity.Critical;
                 findings.Add(new Finding
                 {
                     CheckId = Id,
-                    Title = magic is null
-                        ? $"Backup file is exposed: {candidate}"
-                        : $"{DescribeMagic(magic)} is exposed: {candidate}",
+                    Title = $"{DescribeMagic(magic)} is exposed: {candidate}",
                     Description =
                         "A backup archive or database dump is reachable. It can disclose source " +
                         "code, configuration, credentials and customer data.",
-                    Severity = severity,
-                    Confidence = magic is null ? Confidence.Medium : Confidence.High,
+                    Severity = Severity.Critical,
+                    Confidence = Confidence.High,
                     Target = context.Target.BaseUrl,
                     Url = uri.ToString(),
                     Evidence = new Dictionary<string, string>
@@ -167,7 +166,7 @@ public sealed class BackupCheck : ICheck
                         ["status"] = response.StatusCode.ToString(),
                         ["contentType"] = contentType,
                         ["bytes"] = response.Body.Length.ToString(),
-                        ["magic"] = magic ?? string.Empty,
+                        ["magic"] = magic,
                         ["token"] = TokenFor(candidate, tokens),
                     },
                     Remediation =
@@ -207,10 +206,11 @@ public sealed class BackupCheck : ICheck
         return result;
     }
 
-    private static (List<string> Tokens, HashSet<string> AppTokens) BuildTokens(ICheckContext context)
+    private static (List<string> Tokens, HashSet<string> AppTokens, HashSet<string> NameTokens) BuildTokens(ICheckContext context)
     {
         var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var appTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nameTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var host = context.Target.Host;
         var isIp = IPAddress.TryParse(host, out _);
 
@@ -249,15 +249,17 @@ public sealed class BackupCheck : ICheck
         {
             AddToken(tokens, name);
             AddToken(appTokens, name);
+            AddToken(nameTokens, name);
         }
 
-        return (tokens.ToList(), appTokens);
+        return (tokens.ToList(), appTokens, nameTokens);
     }
 
     private static List<string> BuildCandidates(
         ICheckContext context,
         IReadOnlyList<string> tokens,
-        HashSet<string> appTokens)
+        HashSet<string> appTokens,
+        HashSet<string> nameTokens)
     {
         var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var appPath = context.Target.BaseUri.AbsolutePath.TrimEnd('/');
@@ -270,10 +272,17 @@ public sealed class BackupCheck : ICheck
                     var name = wrapper
                         .Replace("{name}", token, StringComparison.Ordinal)
                         .Replace("{ext}", extension, StringComparison.Ordinal);
-                    candidates.Add("/" + name.TrimStart('/'));
+                    var file = "/" + name.TrimStart('/');
+                    candidates.Add(file);
                     if (appPath.Length > 1 && appTokens.Contains(token))
                     {
                         candidates.Add(appPath + "/" + name.TrimStart('/'));
+                    }
+
+                    // A --name-token also names a directory, so probe /token/token.ext too.
+                    if (nameTokens.Contains(token))
+                    {
+                        candidates.Add("/" + token.TrimStart('/') + "/" + name.TrimStart('/'));
                     }
                 }
             }
@@ -380,20 +389,56 @@ public sealed class BackupCheck : ICheck
             return "SQLite database";
         }
 
-        var text = Encoding.UTF8.GetString(body, 0, Math.Min(body.Length, 2048));
-        var upper = text.ToUpperInvariant();
-        if (upper.Contains("-- MYSQL DUMP", StringComparison.Ordinal)
-            || upper.Contains("-- MARIADB DUMP", StringComparison.Ordinal)
-            || upper.Contains("-- POSTGRESQL DATABASE DUMP", StringComparison.Ordinal)
-            || upper.Contains("-- PHPMYADMIN SQL DUMP", StringComparison.Ordinal)
-            || upper.Contains("DROP TABLE IF EXISTS", StringComparison.Ordinal)
-            || upper.Contains("CREATE TABLE", StringComparison.Ordinal)
-            || upper.Contains("INSERT INTO", StringComparison.Ordinal))
+        return null;
+    }
+
+    /// <summary>
+    /// True when the body is an HTML, XML or JSON document. A soft-404 page can be returned with
+    /// HTTP 200 and even an archive content type, so markup must never be treated as a backup.
+    /// </summary>
+    private static bool LooksLikeMarkup(byte[] body)
+    {
+        var length = Math.Min(body.Length, 1024);
+        if (length == 0)
         {
-            return "SQL/text database dump";
+            return false;
         }
 
-        return null;
+        var text = Encoding.UTF8.GetString(body, 0, length).TrimStart('\uFEFF', ' ', '\t', '\r', '\n');
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        if (text[0] is '<' or '{' or '[')
+        {
+            return true;
+        }
+
+        var head = text[..Math.Min(text.Length, 512)];
+        return head.Contains("<!doctype html", StringComparison.OrdinalIgnoreCase)
+               || head.Contains("<html", StringComparison.OrdinalIgnoreCase)
+               || head.Contains("<head", StringComparison.OrdinalIgnoreCase)
+               || head.Contains("<body", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>True for a text SQL dump; markup has already been rejected by the caller.</summary>
+    private static bool LooksLikeSqlDump(byte[] body)
+    {
+        if (body.Length < 512)
+        {
+            return false;
+        }
+
+        var text = Encoding.UTF8.GetString(body, 0, Math.Min(body.Length, 4096));
+        var upper = text.ToUpperInvariant();
+        return upper.Contains("-- MYSQL DUMP", StringComparison.Ordinal)
+               || upper.Contains("-- MARIADB DUMP", StringComparison.Ordinal)
+               || upper.Contains("-- POSTGRESQL DATABASE DUMP", StringComparison.Ordinal)
+               || upper.Contains("-- PHPMYADMIN SQL DUMP", StringComparison.Ordinal)
+               || upper.Contains("DROP TABLE IF EXISTS", StringComparison.Ordinal)
+               || upper.Contains("CREATE TABLE", StringComparison.Ordinal)
+               || upper.Contains("INSERT INTO", StringComparison.Ordinal);
     }
 
     private static bool StartsWith(byte[] body, byte[] signature) =>

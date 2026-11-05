@@ -248,7 +248,10 @@ aetheleye --url example.com --mode all --exploited --out results\critical
 
 | Option | Description |
 |---|---|
-| `--url <value>` | Web target. Repeatable; comma-separated values are accepted. |
+| `--url <value>` | Web target. Repeatable; comma-separated values are accepted. A bare IPv4 range/CIDR/wildcard is expanded too. |
+| `--ip-range <value>` | IPv4 range, CIDR or wildcard: `10.0.0.1-10.0.0.20`, `10.0.0.0/24`, `10.0.0.*`. Repeatable/comma-separated. Default scheme is `http://`. |
+| `--path <list>` | Application path(s) added to every range host and to root URLs, for example `--path /abc,/xyz`. |
+| `--target-file <f>` | One URL, IP, CIDR or range per line. Blank lines and `#` comments are ignored. |
 | `--src <path>` | Local source directory, `.zip` (extracted locally), JavaScript file or manifest file. Repeatable. |
 | `--mode <list>` | Check mode(s). Default: `all`. |
 | `--update db` | Download OSV/Retire/Node/KEV/EPSS feeds into SQLite and refresh Wappalyzer fingerprints. |
@@ -256,12 +259,16 @@ aetheleye --url example.com --mode all --exploited --out results\critical
 | `--offline` | Offline scan. No GitHub/leak APIs or live feeds. |
 | `--chromium [path]` | Enable headless Chromium; optionally give the executable path. |
 | `--timeout <sec>` | HTTP and headless navigation timeout. |
+| `--proxy <url>` | Proxy for the target HTTP client and headless Chromium. Optional: the system proxy is used by default, like a browser. A bare `host:port` is normalized to `http://host:port`. |
 | `--concurrency <n>` | Parallel targets (default: 1). |
 | `--random-agent` | Rotate a browser User-Agent for every target request. |
 | `--authen <file>` | Raw Burp header block with `Cookie`/`Authorization` for authenticated scans. |
 | `--name-token <name>` | Extra backup filename stem (repeatable/comma-separated). Path tokens are automatic; an IP is never split into octets. |
 | `--evasion` | Low-and-slow, browser-like requests for authorized WAF/IDS testing. |
-| `--allow-uat` | UAT preset: private/loopback hosts, self-signed TLS and non-standard ports. |
+| `--allow-uat` | UAT preset: private/loopback hosts, self-signed TLS and non-standard ports. Also restricts requests to the target origin. |
+| `--same-origin-only` | Restrict HTTP and headless-browser requests to the target origin (no third-party CDN/analytics traffic). |
+| `--allow-third-party` | Opt out of the strict same-origin policy that `--allow-uat` enables. |
+| `--osint-domain <d>` | Public brand domain used by `github`/`leaked-accounts` when the target is an internal host/IP. |
 | `--out <dir>` | Output directory. |
 | `--format <list>` | `text` (default) or `json`; comma-separated for both. |
 | `--exploited` | Keep only High/Critical findings in the report. |
@@ -280,6 +287,7 @@ tokens.
 | `all` | Everything selected for the inputs; adds `source` when `--src` is present. | Default full assessment. |
 | `web` | `dns`, `rdap`, `subdomains`, `social`, `robots`, `sitemap`, `cms`, `api`, `waf`, `technology`, `security`, `exposure`, `hidden-paths`, `backup`. | A web/domain assessment without GitHub, leak APIs or local source. |
 | `technology` | `technology`, `cms`, `exposure`. | Technology fingerprint, CMS detection and default-page/API/Actuator/debug exposure. |
+| `fingerprint` | `technology` only. | Runtime technology detection without CMS or default-page checks. |
 | `external` | `github`, `leaked-accounts`. | Public repository and leaked-account OSINT. |
 | `source` | Local source/dependency scan against the advisory database. | A downloaded source tree or `.zip`. |
 
@@ -289,9 +297,9 @@ Quick legend: `dns`/`rdap`/`subdomains`/`social` are domain intelligence;
 Actuator/debug pages; `hidden-paths`/`backup` are exposed files; `github`/`leaked-accounts` are
 external OSINT; `source` is local code/dependency analysis.
 
-Accepted aliases: `github`, `leaked-account`, `robots`, `waf`, `technology`, `hidden-paths`,
-`cms`, `wordpress`, `joomla`, `drupal`, `magento`, `exposure`, `swagger`, `actuator`, `tomcat`,
-`debug`, `security`, `headers`, `cookies`, `sitemap`, `backup`, `backups`, `dns`, `rdap`,
+Accepted aliases: `github`, `leaked-account`, `robots`, `waf`, `technology`, `fingerprint`,
+`hidden-paths`, `cms`, `wordpress`, `joomla`, `drupal`, `magento`, `exposure`, `swagger`, `actuator`,
+`tomcat`, `debug`, `security`, `headers`, `cookies`, `sitemap`, `backup`, `backups`, `dns`, `rdap`,
 `subdomains`, `social`, `api`, `endpoints`; older names `leaked`, `leaks`, `tech`, `wafw00f`, `hidden`, `paths`, `src`,
 `code`, `deps`.
 
@@ -353,6 +361,73 @@ Each path is treated as a separate application:
 
 `--allow-uat` already permits private/loopback hosts, self-signed TLS and non-standard ports.
 
+### 2b. Scan a whole IP range with several app paths
+
+`--ip-range` expands a CIDR, an inclusive range or a wildcard. `--path` adds one or more
+application paths to every expanded host, so one command covers every app on every address:
+
+```powershell
+aetheleye `
+  --ip-range 10.0.0.1-10.0.0.20 `
+  --path /abc,/xyz `
+  --mode web `
+  --offline `
+  --allow-uat `
+  --concurrency 4 `
+  --out results\uat-range
+```
+
+That produces 40 targets (`http://10.0.0.1/abc`, `http://10.0.0.1/xyz`, ...,
+`http://10.0.0.20/xyz`). Ranges use `http://` by default; prefix the value with `https://`
+to change the scheme. A CIDR (`10.0.0.0/24`) or wildcard (`10.0.0.*`) works too. The expansion
+is capped at 4096 hosts per range so a typo cannot start a mass scan.
+
+For a customer-provided list, put one URL, IP, CIDR or range per line:
+
+```text
+# targets.txt
+http://10.0.0.5/abc
+http://10.0.0.5/xyz
+10.0.1.0/24
+```
+
+```powershell
+aetheleye --target-file targets.txt --path /portal --mode web --offline --allow-uat
+```
+
+`--path` only fills in root URLs; a line that already has a path keeps it.
+
+### 2c. Exactly five single-requirement modes
+
+When a customer asks for five separate deliverables, run one mode per requirement. These modes do
+not run `dns`, `rdap`, `subdomains` or `social`, so they never enumerate subdomains, query DNS in
+bulk or contact another host:
+
+| Requirement | Command |
+|---|---|
+| robots.txt | `--mode robots` |
+| Runtime web technology | `--mode fingerprint --chromium` |
+| Hidden files `.bak`, `.git`, ... | `--mode hidden-paths` |
+| GitHub projects | `--mode github` |
+| Leaked Internet accounts | `--mode leaked-accounts` |
+
+```powershell
+$exe  = ".\aetheleye.exe"
+$site = "http://iptest/merchant"
+$common = @("--url", $site, "--allow-uat", "--no-banner", "--format", "text,json")
+
+& $exe @common --mode robots --out results\01-robots
+& $exe @common --mode fingerprint --chromium --out results\02-technology
+& $exe @common --mode hidden-paths --out results\03-hidden-paths
+& $exe @common --mode github --osint-domain customer.com --out results\04-github
+& $exe @common --mode leaked-accounts --osint-domain customer.com --out results\05-leaked
+```
+
+`--allow-uat` restricts both the HTTP client and the headless browser to the target origin, so a
+page cannot pull a third-party CDN, analytics script, another subdomain or another port. Use
+`--allow-third-party` only if that traffic is intended.
+`github` and `leaked-accounts` must run online (do not pass `--offline`).
+
 ### 3. Authenticated scan from a Burp header capture
 
 Log in with Burp or the browser, copy the request headers, and save them to a local text file:
@@ -379,15 +454,31 @@ text/JSON report. Only send headers for accounts and systems you are authorized 
 ### 4. Backup archives for an application under an IP path
 
 For `http://10.0.0.5/xyz`, the path segment `xyz` is used automatically as the backup stem.
-`--name-token` adds more stems. An IP address is used whole (`10.0.0.5.zip`); it is never split into
-`10.zip` or `10.0.zip`.
+`--name-token` adds more stems. A named token is probed both as a file in the web root and as a
+directory (`--name-token merchant` tries `/merchant.zip` and `/merchant/merchant.zip`), because UAT
+sites often keep backups at the root even when the application lives under `/merchant/`. An IP
+address is used whole (`10.0.0.5.zip`); it is never split into `10.zip` or `10.0.zip`.
 
 ```powershell
 aetheleye --url http://10.0.0.5/xyz --mode backup --allow-uat
 aetheleye --url http://10.0.0.5/xyz --mode backup --name-token xyz,backup --allow-uat
 ```
 
-### 5. Downloaded source archive
+### 5. Internal UAT behind a proxy
+
+Both the HTTP client and headless Chromium use the system proxy by default, exactly like a browser
+(and like wapsharp). A machine whose route to the UAT network is the corporate proxy therefore
+works without extra flags. `--proxy` is an explicit override; a bare `host:port` is normalized:
+
+```powershell
+aetheleye --url http://iptest/merchant --mode web --chromium --allow-uat --proxy ipproxy:8080
+```
+
+`appsettings.json` (`AethelEye:Proxy`) and `HTTP_PROXY`/`HTTPS_PROXY` are also accepted and are
+normalized the same way. When `--chromium` is enabled, page-based checks fetch content through the
+browser first, because a UAT target may tarpit the .NET client while still serving Chromium.
+
+### 6. Downloaded source archive
 
 `--src` points at a **local** path. If a site exposes `http://10.0.0.5/abc.zip`, download it
 manually first, then scan the local archive:
@@ -413,7 +504,7 @@ You can also add the file to the hidden-path check:
 }
 ```
 
-### 6. Source and the local advisory database
+### 7. Source and the local advisory database
 
 Build the SQLite database once on a connected machine, then copy the single `.db` file to the
 isolated assessment machine:
@@ -433,7 +524,7 @@ The database stores the Retire repository plus OSV, Node.js, CISA KEV and EPSS f
 technology findings gain CVE/GHSA identifiers, KEV/EPSS context and public PoC references when the
 feed carries them. There is no suppression list: every vulnerable component is reported.
 
-### 7. Domain-level checks
+### 8. Domain-level checks
 
 ```powershell
 aetheleye --url example.com --mode dns,rdap,subdomains,social
@@ -443,7 +534,7 @@ These are passive domain checks: DNS-over-HTTPS, RDAP, Certificate Transparency 
 contacts. They do not evaluate TLS, port-scan or brute-force directories. Run them together with
 the target web checks through `--mode web`, or select them by name in `--mode`.
 
-### 8. GitHub and leaked accounts
+### 9. GitHub and leaked accounts
 
 ```powershell
 aetheleye --url example.com --mode github
@@ -453,7 +544,7 @@ aetheleye --url example.com --mode leaked-account,github --offline
 
 In offline mode both checks are reported as `Skipped`. A skipped check is **not** evidence of "no risk"; run it online or document that it was not assessed.
 
-### 9. WAF fingerprint
+### 10. WAF fingerprint
 
 ```powershell
 aetheleye --url example.com --mode waf
@@ -469,7 +560,7 @@ WAF detection is information, not a vulnerability. To disable the safe active pr
 }
 ```
 
-### 10. Why `--src` and `--mode github,leaked-account` do not combine
+### 11. Why `--src` and `--mode github,leaked-account` do not combine
 
 ```powershell
 # Wrong: GitHub/leaked checks need a web domain, not a local source path

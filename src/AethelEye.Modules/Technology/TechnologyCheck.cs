@@ -91,24 +91,30 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
 
         HttpResponseData? page = null;
         Exception? httpError = null;
-        try
-        {
-            page = await context.Pages.GetAsync(context.Target.BaseUri, context.CancellationToken);
-        }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            if (!headless)
-            {
-                throw;
-            }
-
-            httpError = error;
-        }
-
         BrowserCapture? capture = null;
+
         if (headless)
         {
-            capture = await TryCaptureAsync(context, page, result);
+            // Go straight to the browser. The HTTP client may be tarpitted by the target, and the
+            // page cache is browser-backed too, so fetching here would render the page twice.
+            capture = await TryCaptureAsync(context, null, result);
+        }
+
+        if (capture is null)
+        {
+            try
+            {
+                page = await context.Pages.GetAsync(context.Target.BaseUri, context.CancellationToken);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                if (!headless)
+                {
+                    throw;
+                }
+
+                httpError = error;
+            }
         }
 
         if (page is null && capture is null)
@@ -129,10 +135,20 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
             technologies = [.. technologies, .. capture.Technologies];
             result.Metrics["headless"] = "true";
             result.Metrics["runtimeTechnologies"] = capture.Technologies.Count.ToString();
+            result.Metrics["browserUrl"] = capture.FinalUri.ToString();
+            result.Metrics["browserStatus"] = capture.StatusCode.ToString();
+            result.Metrics["browserBodyBytes"] = capture.Body.Length.ToString();
             if (httpError is not null)
             {
                 result.Notes.Add(
                     $"HTTP client failed ({httpError.Message}); the headless browser got a response.");
+            }
+
+            if (capture.Headers.Count == 0 && capture.Body.Length == 0)
+            {
+                result.Notes.Add(
+                    "The headless browser returned no document headers or body; the target may " +
+                    "have blocked the browser or redirected to an empty page.");
             }
 
             if (capture.Partial)
@@ -491,37 +507,66 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
 
         var limit = TimeSpan.FromSeconds(
             Math.Clamp(context.Engagement.Browser.TimeoutSeconds, 5, 300));
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
-        timeout.CancelAfter(limit);
+
+        // Navigation, document reading and runtime collection each get their own budget. A page
+        // that never fires the load event, or a body that streams forever, must not consume the
+        // time needed to read the DOM and JavaScript state: the browser still has a usable page.
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        lifetime.CancelAfter(limit + limit + limit + TimeSpan.FromSeconds(5));
 
         CdpPage? tab = null;
         try
         {
-            tab = await browser.NewPageAsync(timeout.Token);
-            var headers = BuildBrowserHeaders(context);
+            tab = await browser.NewPageAsync(lifetime.Token);
+            var headers = BrowserHeaderPolicy.Build(
+                context.Engagement.Http.Headers,
+                context.Engagement.Http.Evasion);
             if (headers.Count > 0)
             {
-                await tab.SetExtraHeadersAsync(headers, timeout.Token);
+                await tab.SetExtraHeadersAsync(headers, lifetime.Token);
+            }
+
+            if (context.Engagement.Browser.SameOriginOnly)
+            {
+                await tab.RestrictToOriginAsync(context.Target.BaseUri, lifetime.Token);
             }
 
             var target = page?.FinalUri ?? context.Target.BaseUri;
             var partial = false;
-            using (var load = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token))
+            using (var load = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token))
             {
                 load.CancelAfter(TimeSpan.FromMilliseconds(limit.TotalMilliseconds * 0.7));
                 try
                 {
                     await tab.NavigateAsync(target, load.Token);
                 }
-                catch (OperationCanceledException) when (!timeout.IsCancellationRequested)
+                catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
                 {
                     partial = true;
                 }
             }
 
-            var document = await tab.ReadDocumentAsync(
-                context.Engagement.Http.MaxBodyBytes,
-                timeout.Token);
+            using var documentTimeout =
+                CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            documentTimeout.CancelAfter(limit);
+
+            BrowserDocument? document = null;
+            try
+            {
+                document = await tab.ReadDocumentAsync(
+                    context.Engagement.Http.MaxBodyBytes,
+                    documentTimeout.Token);
+            }
+            catch (OperationCanceledException) when (!lifetime.IsCancellationRequested)
+            {
+                partial = true;
+            }
+
+            // A fresh budget for collection: reading a streaming body may have used its own.
+            using var collectTimeout =
+                CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+            collectTimeout.CancelAfter(limit);
+
             var finalUri = document?.Url ?? target;
             IReadOnlyDictionary<string, string[]> finalHeaders =
                 document?.Headers ?? page?.Headers ?? new Dictionary<string, string[]>();
@@ -532,8 +577,8 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
             var collector = new RuntimeCollector(tab);
             var engine = GetEngine(context);
             var rules = engine.GetRuntimeRules();
-            var collection = await collector.CollectAsync(rules, timeout.Token);
-            var runtime = await engine.FingerprintWithRuntimeAsync(
+            var collection = await collector.CollectAsync(rules, collectTimeout.Token);
+            var runtimeResult = await engine.FingerprintWithRuntimeAsync(
                 finalHeaders,
                 body,
                 new RuntimeOptions
@@ -541,20 +586,22 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
                     Collector = new CachedCollector(collection),
                     Timeout = limit,
                 },
-                timeout.Token);
+                collectTimeout.Token);
 
             return new BrowserCapture(
                 finalUri,
+                document?.StatusCode ?? 0,
                 finalHeaders,
                 body,
-                runtime.Technologies,
+                runtimeResult.Technologies,
                 collection.Evidence.Scripts ?? [],
                 partial,
-                runtime.Error?.Message ?? collection.Error?.Message);
+                runtimeResult.Error?.Message ?? collection.Error?.Message);
         }
         catch (OperationCanceledException) when (!context.CancellationToken.IsCancellationRequested)
         {
-            result.Notes.Add($"Headless navigation exceeded {limit.TotalSeconds:0}s; partial results may be used.");
+            result.Notes.Add(
+                $"Headless capture exceeded {limit.TotalSeconds * 3:0}s; partial results may be used.");
             return null;
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -602,14 +649,14 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
                 var userAgent = context.Engagement.Http.Evasion
                                 || context.Engagement.Http.RandomUserAgent
                     ? EvasionProfile.NextUserAgent()
-                    : context.Engagement.Http.UserAgent;
+                    : context.Engagement.Browser.UserAgent;
                 _browser = await ChromiumBrowser.LaunchAsync(
                     new ChromiumOptions
                     {
                         ExecutablePath = context.Engagement.Browser.ChromiumPath,
                         DisableSandbox = context.Engagement.Browser.DisableSandbox,
                         IgnoreCertificateErrors = context.Engagement.Http.Insecure,
-                        ProxyServer = context.Engagement.Http.Proxy,
+                        ProxyServer = ProxyUrl.Normalize(context.Engagement.Http.Proxy),
                         UserAgent = userAgent,
                         StartupTimeout = TimeSpan.FromSeconds(30),
                     },
@@ -628,22 +675,6 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
         {
             _browserGate.Release();
         }
-    }
-
-    private static List<(string Name, string Value)> BuildBrowserHeaders(ICheckContext context)
-    {
-        var headers = new List<(string Name, string Value)>();
-        foreach (var (name, value) in context.Engagement.Http.Headers)
-        {
-            headers.Add((name, value));
-        }
-
-        if (context.Engagement.Http.Evasion)
-        {
-            headers.Add(("Accept-Language", EvasionProfile.NextLanguage()));
-        }
-
-        return headers;
     }
 
     public async ValueTask DisposeAsync()
@@ -793,6 +824,7 @@ public sealed class TechnologyCheck : ICheck, IAsyncDisposable
 
     private sealed record BrowserCapture(
         Uri FinalUri,
+        int StatusCode,
         IReadOnlyDictionary<string, string[]> Headers,
         byte[] Body,
         HashSet<string> Technologies,

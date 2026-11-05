@@ -40,14 +40,23 @@ public static class EngagementLoader
         }
 
         Normalize(engagement);
+        if (engagement.Targets.Count > 0)
+        {
+            engagement.Targets = TargetExpander.Expand(engagement.Targets).ToList();
+        }
+
         return engagement;
     }
 
     public static Engagement CreateOneOff(
         IEnumerable<string> targets,
-        IEnumerable<string>? sources = null)
+        IEnumerable<string>? sources = null,
+        IEnumerable<string>? paths = null)
     {
-        var values = targets.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+        var values = TargetExpander
+            .Expand(targets, paths)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
         var sourceValues = (sources ?? [])
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(Path.GetFullPath)
@@ -112,6 +121,38 @@ public static class EngagementLoader
 
         Normalize(engagement);
         return engagement;
+    }
+
+    public static IReadOnlyList<string> ReadTargetFile(string path)
+    {
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Target file not found: {path}", path);
+        }
+
+        var values = new List<string>();
+        foreach (var line in File.ReadLines(path))
+        {
+            var text = line.Trim();
+            if (text.Length == 0 || text.StartsWith('#'))
+            {
+                continue;
+            }
+
+            // Allow an inline comment after the value.
+            var comment = text.IndexOf(" #", StringComparison.Ordinal);
+            if (comment > 0)
+            {
+                text = text[..comment].Trim();
+            }
+
+            if (text.Length > 0)
+            {
+                values.Add(text);
+            }
+        }
+
+        return values;
     }
 
     public static void Save(Engagement engagement, string path)

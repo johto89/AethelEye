@@ -50,7 +50,7 @@ public static class AuthHeaderFile
             }
 
             var text = value.ToString().Trim();
-            if (text.Length > 0 && !Ignored.Contains(name))
+            if (text.Length > 0 && !Ignored.Contains(name) && !RequestHeaderPolicy.IsContentHeader(name))
             {
                 headers[name] = text;
             }

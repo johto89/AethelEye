@@ -32,7 +32,10 @@ public sealed class ScopedHttpClient : IScopedHttpClient
         {
             AllowAutoRedirect = false,
             UseCookies = false,
-            UseProxy = !string.IsNullOrWhiteSpace(settings.Proxy),
+            // Match a real browser (and wapsharp): use the system proxy by default. A machine
+            // that can only reach the UAT network through the corporate proxy works without
+            // --proxy. An explicit --proxy/appsettings value overrides the system proxy.
+            UseProxy = true,
             AutomaticDecompression = DecompressionMethods.All,
             ConnectTimeout = TimeSpan.FromSeconds(Math.Min(Math.Max(settings.TimeoutSeconds, 1), 15)),
             MaxResponseHeadersLength = 256,
@@ -41,7 +44,7 @@ public sealed class ScopedHttpClient : IScopedHttpClient
 
         if (!string.IsNullOrWhiteSpace(settings.Proxy))
         {
-            handler.Proxy = new WebProxy(settings.Proxy);
+            handler.Proxy = new WebProxy(new Uri(ProxyUrl.Normalize(settings.Proxy)!));
         }
         else
         {
@@ -69,6 +72,11 @@ public sealed class ScopedHttpClient : IScopedHttpClient
         headers.TryAddWithoutValidation("Accept", "*/*");
         foreach (var (name, value) in settings.Headers ?? [])
         {
+            if (RequestHeaderPolicy.IsContentHeader(name))
+            {
+                continue;
+            }
+
             headers.Remove(name);
             headers.TryAddWithoutValidation(name, value);
         }

@@ -12,6 +12,12 @@ public sealed class Engagement
 
     public string? Client { get; set; }
 
+    /// <summary>
+    /// Public brand domain used by GitHub and leak OSINT when the scan target is an internal
+    /// host name such as a UAT server. Empty means the target host is used.
+    /// </summary>
+    public string? OsintDomain { get; set; }
+
     public string? AuthorizedBy { get; set; }
 
     public string? Notes { get; set; }
@@ -151,6 +157,18 @@ public sealed class BrowserSettings
 
     /// <summary>Only needed when Chromium runs as root in a container.</summary>
     public bool DisableSandbox { get; set; }
+
+    /// <summary>
+    /// Block browser requests to any host other than the target. Use it for single-target
+    /// engagements where the page must not contact third-party CDNs, analytics or subdomains.
+    /// </summary>
+    public bool SameOriginOnly { get; set; }
+
+    /// <summary>
+    /// Browser user agent. Empty keeps Chromium's own user agent, which is what a real browser
+    /// sends; do not reuse the HTTP client agent because its tool token can trip a WAF.
+    /// </summary>
+    public string? UserAgent { get; set; }
 
     /// <summary>Navigation and runtime-collection budget in seconds.</summary>
     public int TimeoutSeconds { get; set; } = 20;

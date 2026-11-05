@@ -29,7 +29,8 @@ public sealed class ExternalHttpClient : IExternalHttpClient
             AllowAutoRedirect = true,
             MaxAutomaticRedirections = 5,
             UseCookies = false,
-            UseProxy = !string.IsNullOrWhiteSpace(settings.Proxy),
+            // Public OSINT sources may also be reachable only through the system proxy.
+            UseProxy = true,
             AutomaticDecompression = DecompressionMethods.All,
             ConnectTimeout = TimeSpan.FromSeconds(
                 Math.Clamp(settings.ExternalTimeoutSeconds, 3, 15)),
@@ -38,7 +39,7 @@ public sealed class ExternalHttpClient : IExternalHttpClient
 
         if (!string.IsNullOrWhiteSpace(settings.Proxy))
         {
-            handler.Proxy = new WebProxy(settings.Proxy);
+            handler.Proxy = new WebProxy(new Uri(ProxyUrl.Normalize(settings.Proxy)!));
         }
 
         if (settings.Insecure)

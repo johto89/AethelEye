@@ -11,14 +11,37 @@ public sealed class ScopeValidator
 {
     private readonly ScopeSettings _settings;
     private readonly List<string> _allowedHosts;
+    private readonly HashSet<string>? _originHosts;
+    private readonly HashSet<int>? _originPorts;
+    private readonly bool _allowDefaultPortSwap;
 
-    public ScopeValidator(ScopeSettings settings, IEnumerable<Target> targets)
+    public ScopeValidator(
+        ScopeSettings settings,
+        IEnumerable<Target> targets,
+        bool sameOriginOnly = false)
     {
         _settings = settings;
+        var targetList = targets as IReadOnlyCollection<Target> ?? targets.ToArray();
         var allowed = settings.AllowedHosts ?? [];
         _allowedHosts = allowed.Count > 0
             ? allowed.Select(NormalizePattern).Where(pattern => pattern.Length > 0).ToList()
-            : targets.Select(target => NormalizePattern(target.Host)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            : targetList.Select(target => NormalizePattern(target.Host)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (sameOriginOnly)
+        {
+            var uris = targetList
+                .Select(target => target.BaseUri)
+                .Where(uri => uri.Scheme is "http" or "https")
+                .ToArray();
+            if (uris.Length > 0)
+            {
+                _originHosts = uris
+                    .Select(uri => uri.IdnHost.TrimEnd('.').ToLowerInvariant())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _originPorts = uris.Select(uri => uri.Port).ToHashSet();
+                _allowDefaultPortSwap = uris.All(uri => uri.Port is 80 or 443);
+            }
+        }
     }
 
     public IReadOnlyList<string> AllowedHosts => _allowedHosts;
@@ -51,6 +74,14 @@ public sealed class ScopeValidator
         if (!_settings.AllowNonStandardPorts && uri.Port is not (80 or 443))
         {
             return $"port {uri.Port} is outside the engagement";
+        }
+
+        if (_originHosts is { Count: > 0 }
+            && !(_originHosts.Contains(uri.IdnHost.TrimEnd('.'))
+                && (_originPorts!.Contains(uri.Port)
+                    || (_allowDefaultPortSwap && uri.Port is 80 or 443))))
+        {
+            return $"origin '{uri.Scheme}://{uri.IdnHost}:{uri.Port}' is outside the single-target scope";
         }
 
         var host = uri.IdnHost.TrimEnd('.').ToLowerInvariant();

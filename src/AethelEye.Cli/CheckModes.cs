@@ -6,7 +6,7 @@ namespace AethelEye.Cli;
 /// </summary>
 public static class CheckModes
 {
-    public const string Usage = "all, web, technology, external, source";
+    public const string Usage = "all, web, technology, fingerprint, external, source";
 
     private static readonly string[] DomainChecks = ["dns", "rdap", "subdomains", "social"];
     private static readonly string[] WebChecks =
@@ -105,6 +105,14 @@ public static class CheckModes
                 case "wafw00f":
                     RequireWeb(token, hasWebTargets);
                     result.Add("waf");
+                    break;
+
+                case "fingerprint":
+                case "fingerprints":
+                case "tech-detect":
+                case "tech-only":
+                    RequireWeb(token, hasWebTargets);
+                    result.Add("technology");
                     break;
 
                 case "technology":

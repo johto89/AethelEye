@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AethelEye.Core.Http;
 using AethelEye.Core.Models;
 
 namespace AethelEye.Cli;
@@ -85,7 +86,7 @@ public static class AppSettingsLoader
 
         if (!string.IsNullOrWhiteSpace(settings.Proxy))
         {
-            engagement.Http.Proxy = settings.Proxy;
+            engagement.Http.Proxy = ProxyUrl.Normalize(settings.Proxy);
         }
 
         if (!string.IsNullOrWhiteSpace(settings.UserAgent))
@@ -137,7 +138,7 @@ public static class AppSettingsLoader
             ?? Environment.GetEnvironmentVariable("HTTP_PROXY");
         if (!string.IsNullOrWhiteSpace(proxy))
         {
-            engagement.Http.Proxy = proxy;
+            engagement.Http.Proxy = ProxyUrl.Normalize(proxy);
         }
 
     }
