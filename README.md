@@ -640,11 +640,12 @@ aetheleye --url example.com --src .\src --mode all --offline
 }
 ```
 
-`hidden-paths` probes the full 762-entry catalog. Set `maxPaths` (for example `500`) to cap
-request volume on a fragile or rate-limited target; the highest-severity entries are kept first.
-The CLI gives this check a 300-second budget by default so a full pass fits at 5 requests/second.
-It also derives backup names from the host and application segment, so `http://host/merchant`
-probes `/merchant.zip` and `/merchant/merchant.zip` as well as the static catalog.
+`hidden-paths` probes roughly 760 entries (762 for a host plus application-segment target).
+Set `maxPaths` (for example `500`) to cap request volume on a fragile or rate-limited target;
+the highest-severity entries are kept first. The CLI gives this check a 300-second budget by
+default so a full pass fits at 5 requests/second. It also derives backup names from the host
+and application segment, so `http://host/merchant` probes `/merchant.zip` and
+`/merchant/merchant.zip` as well as the static catalog.
 
 Run it with:
 
