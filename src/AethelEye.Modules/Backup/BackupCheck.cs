@@ -130,7 +130,7 @@ public sealed class BackupCheck : ICheck
                     return;
                 }
 
-                var magic = IdentifyMagic(response.Body);
+                var magic = FileSignatures.Identify(response.Body);
                 var contentType = response.ContentType ?? string.Empty;
                 if (magic is null)
                 {
@@ -335,63 +335,6 @@ public sealed class BackupCheck : ICheck
     private static bool LooksLikeSoftNotFound(HttpResponseData candidate, HttpResponseData baseline) =>
         Soft404Detector.LooksLikeSoftNotFound(candidate, baseline);
 
-    private static string? IdentifyMagic(byte[] body)
-    {
-        if (body.Length == 0)
-        {
-            return null;
-        }
-
-        if (StartsWith(body, [0x50, 0x4B, 0x03, 0x04])
-            || StartsWith(body, [0x50, 0x4B, 0x05, 0x06])
-            || StartsWith(body, [0x50, 0x4B, 0x07, 0x08]))
-        {
-            return "ZIP archive";
-        }
-
-        if (StartsWith(body, [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07]))
-        {
-            return "RAR archive";
-        }
-
-        if (StartsWith(body, [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]))
-        {
-            return "7-Zip archive";
-        }
-
-        if (StartsWith(body, [0x1F, 0x8B]))
-        {
-            return "GZIP archive";
-        }
-
-        if (StartsWith(body, [0x42, 0x5A, 0x68]))
-        {
-            return "BZIP2 archive";
-        }
-
-        if (StartsWith(body, [0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]))
-        {
-            return "XZ archive";
-        }
-
-        if (body.Length > 262
-            && body[257] == (byte)'u'
-            && body[258] == (byte)'s'
-            && body[259] == (byte)'t'
-            && body[260] == (byte)'a'
-            && body[261] == (byte)'r')
-        {
-            return "TAR archive";
-        }
-
-        if (StartsWith(body, Encoding.ASCII.GetBytes("SQLite format 3\0")))
-        {
-            return "SQLite database";
-        }
-
-        return null;
-    }
-
     /// <summary>
     /// True when the body is an HTML, XML or JSON document. A soft-404 page can be returned with
     /// HTTP 200 and even an archive content type, so markup must never be treated as a backup.
@@ -440,9 +383,6 @@ public sealed class BackupCheck : ICheck
                || upper.Contains("CREATE TABLE", StringComparison.Ordinal)
                || upper.Contains("INSERT INTO", StringComparison.Ordinal);
     }
-
-    private static bool StartsWith(byte[] body, byte[] signature) =>
-        body.Length >= signature.Length && body.AsSpan(0, signature.Length).SequenceEqual(signature);
 
     private static string DescribeMagic(string magic) =>
         magic.Contains("dump", StringComparison.OrdinalIgnoreCase)

@@ -299,6 +299,10 @@ Quick legend: `dns`/`rdap`/`subdomains`/`social` are domain intelligence;
 Actuator/debug pages; `hidden-paths`/`backup` are exposed files; `github`/`leaked-accounts` are
 external OSINT; `source` is local code/dependency analysis.
 
+When every target is an IP address, `dns` and `subdomains` are dropped from `web`/`all`
+automatically: an IP has no domain name to resolve and no subdomains to discover. `rdap`
+still runs because IP WHOIS is useful. Asking for `--mode subdomains` on an IP is an error.
+
 Accepted aliases: `github`, `leaked-account`, `robots`, `waf`, `technology`, `fingerprint`,
 `hidden-paths`, `cms`, `wordpress`, `joomla`, `drupal`, `magento`, `exposure`, `swagger`, `actuator`,
 `tomcat`, `debug`, `security`, `headers`, `cookies`, `sitemap`, `backup`, `backups`, `dns`, `rdap`,
@@ -624,7 +628,7 @@ aetheleye --url example.com --src .\src --mode all --offline
   "checks": {
     "waf": { "options": { "activeProbe": true } },
     "technology": { "options": { "maxScripts": 40, "favicon": true, "deep": false, "focus": "all" } },
-    "hidden-paths": { "options": { "parallelism": 4 } },
+    "hidden-paths": { "options": { "parallelism": 4, "maxPaths": 0 } },
     "source": { "options": { "maxFindings": 200, "deep": false, "focus": "all" } },
     "github": { "options": { "cloneAndScan": false } }
   },
@@ -635,6 +639,12 @@ aetheleye --url example.com --src .\src --mode all --offline
   }
 }
 ```
+
+`hidden-paths` probes the full 762-entry catalog. Set `maxPaths` (for example `500`) to cap
+request volume on a fragile or rate-limited target; the highest-severity entries are kept first.
+The CLI gives this check a 300-second budget by default so a full pass fits at 5 requests/second.
+It also derives backup names from the host and application segment, so `http://host/merchant`
+probes `/merchant.zip` and `/merchant/merchant.zip` as well as the static catalog.
 
 Run it with:
 

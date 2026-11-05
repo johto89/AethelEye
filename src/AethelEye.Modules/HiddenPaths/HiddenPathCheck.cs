@@ -7,8 +7,9 @@ using AethelEye.Core.Models;
 namespace AethelEye.Modules.HiddenPaths;
 
 /// <summary>
-/// Probes a small, curated list of exposed files. A random-path baseline suppresses soft 404 pages,
-/// and each candidate needs a status, content-type or marker that makes sense for that file type.
+/// Probes a broad catalog of exposed files plus backup names derived from the host and
+/// application segment. A random-path baseline suppresses soft 404 pages, and each candidate
+/// needs a status, content-type, marker or magic-byte signature that makes sense for its type.
 /// </summary>
 public sealed class HiddenPathCheck : ICheck
 {
@@ -36,6 +37,27 @@ public sealed class HiddenPathCheck : ICheck
                 AllowHtml: true)).ToList()
             : HiddenPathCatalog.All.ToList();
 
+        // Backups are often named after the host or the application segment and placed at the
+        // site root, for example /merchant.zip for http://host/merchant. Probe those too, but
+        // only when the operator did not supply an explicit custom path list.
+        if (custom.Count == 0)
+        {
+            entries.AddRange(BuildDerivedBackupEntries(context));
+        }
+
+        // 0 means "probe the whole catalog". Set maxPaths to bound request volume on a
+        // rate-limited or fragile target. When capping, keep the highest-severity entries.
+        var maxPaths = Math.Clamp(context.Settings.GetInt("maxPaths", 0), 0, 5000);
+        if (maxPaths > 0 && entries.Count > maxPaths)
+        {
+            result.Notes.Add($"Path list capped at {maxPaths} of {entries.Count} entries.");
+            entries = entries
+                .OrderByDescending(entry => entry.Severity)
+                .ThenBy(entry => entry.Path, StringComparer.Ordinal)
+                .Take(maxPaths)
+                .ToList();
+        }
+
         if (context.Engagement.Http.Evasion)
         {
             entries = entries.OrderBy(_ => Random.Shared.Next()).ToList();
@@ -46,18 +68,14 @@ public sealed class HiddenPathCheck : ICheck
             ? 1
             : Math.Clamp(context.Settings.GetInt("parallelism", 4), 1, 10);
         // Each application path is its own root: /abc/.git/HEAD and /xyz/.git/HEAD are separate.
-        var root = new Uri(context.Target.BaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
+        // Derived backup names such as /merchant.zip live at the site root instead.
+        var appRoot = new Uri(context.Target.BaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
+        var siteRoot = new Uri(context.Target.RootUrl.TrimEnd('/') + "/", UriKind.Absolute);
         var baselinePath = $"/.aetheleye-{Guid.NewGuid():N}";
-        HttpResponseData? baseline = null;
-        try
-        {
-            baseline = await context.Http.GetAsync(new Uri(root, baselinePath.TrimStart('/')), context.CancellationToken);
-            result.Notes.Add($"Soft-404 baseline: HTTP {baseline.StatusCode}, {baseline.Body.Length} bytes.");
-        }
-        catch (Exception error) when (error is not OperationCanceledException)
-        {
-            result.Notes.Add($"Soft-404 baseline failed: {error.Message}");
-        }
+        var baseline = await GetBaselineAsync(context, appRoot, baselinePath, result);
+        var siteBaseline = entries.Any(entry => entry.SiteRoot)
+            ? await GetBaselineAsync(context, siteRoot, baselinePath, result)
+            : null;
 
         var findings = new ConcurrentBag<Finding>();
         var notes = new ConcurrentBag<string>();
@@ -70,7 +88,9 @@ public sealed class HiddenPathCheck : ICheck
             await gate.WaitAsync(context.CancellationToken);
             try
             {
-                var uri = new Uri(root, entry.Path.TrimStart('/'));
+                var entryRoot = entry.SiteRoot ? siteRoot : appRoot;
+                var entryBaseline = entry.SiteRoot ? siteBaseline : baseline;
+                var uri = new Uri(entryRoot, entry.Path.TrimStart('/'));
                 if (!context.Scope.IsAllowed(uri))
                 {
                     Interlocked.Increment(ref skipped);
@@ -100,7 +120,7 @@ public sealed class HiddenPathCheck : ICheck
                     return;
                 }
 
-                if (baseline is not null && LooksLikeSoftNotFound(response, baseline, baselinePath, entry.Path))
+                if (entryBaseline is not null && LooksLikeSoftNotFound(response, entryBaseline, baselinePath, entry.Path))
                 {
                     return;
                 }
@@ -168,6 +188,144 @@ public sealed class HiddenPathCheck : ICheck
         return result;
     }
 
+    private static async Task<HttpResponseData?> GetBaselineAsync(
+        ICheckContext context,
+        Uri root,
+        string baselinePath,
+        CheckResult result)
+    {
+        try
+        {
+            var baseline = await context.Http.GetAsync(
+                new Uri(root, baselinePath.TrimStart('/')),
+                context.CancellationToken);
+            result.Notes.Add(
+                $"Soft-404 baseline ({root}): HTTP {baseline.StatusCode}, {baseline.Body.Length} bytes.");
+            return baseline;
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            result.Notes.Add($"Soft-404 baseline ({root}) failed: {error.Message}");
+            return null;
+        }
+    }
+
+    private static readonly HashSet<string> IgnoredDerivedSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "api", "v1", "v2", "v3", "static", "assets", "css", "js", "images", "img",
+        "index.html", "index.php", "index.htm",
+    };
+
+    private static readonly string[] DerivedBackupExtensions =
+    [
+        ".zip", ".tar.gz", ".7z", ".sql", ".bak", ".old",
+    ];
+
+    private static readonly string[] DerivedBackupWrappers =
+    [
+        "{name}{ext}",
+        "{name}_backup{ext}",
+        "backup_{name}{ext}",
+    ];
+
+    /// <summary>
+    /// Builds backup names from the host and application segment, mirroring backup_finder.py:
+    /// for http://host/merchant it probes /merchant.zip and /merchant/merchant.zip. An IP is
+    /// used whole and never split into octets. These entries are resolved against the site root.
+    /// </summary>
+    private static IEnumerable<HiddenPath> BuildDerivedBackupEntries(ICheckContext context)
+    {
+        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var appTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var host = context.Target.Host;
+        AddDerivedToken(tokens, host);
+        if (!System.Net.IPAddress.TryParse(host, out _))
+        {
+            AddDerivedToken(tokens, host.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
+        }
+
+        var segments = context.Target.BaseUri.AbsolutePath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(segment => segment.Length > 1 && !IgnoredDerivedSegments.Contains(segment))
+            .ToList();
+        var appPath = string.Empty;
+        if (segments.Count > 0)
+        {
+            appPath = string.Join("/", segments);
+            AddDerivedToken(tokens, segments[^1]);
+            AddDerivedToken(appTokens, segments[^1]);
+            if (segments.Count > 1)
+            {
+                var joined = string.Join("-", segments);
+                AddDerivedToken(tokens, joined);
+                AddDerivedToken(appTokens, joined);
+            }
+        }
+
+        foreach (var name in context.Settings.GetStringList("names"))
+        {
+            AddDerivedToken(tokens, name);
+            AddDerivedToken(appTokens, name);
+        }
+
+        var entries = new List<HiddenPath>();
+        foreach (var token in tokens)
+        {
+            foreach (var extension in DerivedBackupExtensions)
+            {
+                foreach (var wrapper in DerivedBackupWrappers)
+                {
+                    var name = wrapper
+                        .Replace("{name}", token, StringComparison.Ordinal)
+                        .Replace("{ext}", extension, StringComparison.Ordinal);
+                    entries.Add(DerivedEntry("/" + name, extension));
+                    if (appPath.Length > 0 && appTokens.Contains(token))
+                    {
+                        entries.Add(DerivedEntry("/" + appPath + "/" + name, extension));
+                    }
+                }
+            }
+        }
+
+        return entries.DistinctBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static HiddenPath DerivedEntry(string path, string extension) =>
+        new(
+            path,
+            Severity.High,
+            extension switch
+            {
+                ".sql" => HiddenPathValidation.SqlDump,
+                ".bak" or ".old" => HiddenPathValidation.None,
+                _ => HiddenPathValidation.Archive,
+            },
+            null,
+            extension is ".bak" or ".old"
+                ? "Backup copy of the application is exposed."
+                : "Backup archive or dump named after the application is exposed.",
+            SiteRoot: true);
+
+    private static void AddDerivedToken(HashSet<string> tokens, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        var cleaned = new string(value.Trim()
+            .Select(character =>
+                char.IsLetterOrDigit(character) || character is '.' or '-' or '_'
+                    ? character
+                    : '-')
+            .ToArray())
+            .Trim('-', '.', '_');
+        if (cleaned.Length > 1)
+        {
+            tokens.Add(cleaned);
+        }
+    }
+
     private static bool Matches(HiddenPath entry, HttpResponseData response)
     {
         var text = response.Text;
@@ -186,6 +344,9 @@ public sealed class HiddenPathCheck : ICheck
                 text,
                 @"(INSERT\s+INTO|CREATE\s+TABLE|--\s*MySQL|PostgreSQL database dump)",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant),
+            // A 200 with an archive content type is often an HTML soft-404. Only the magic bytes
+            // prove that the response really is an archive or database file.
+            HiddenPathValidation.Archive => FileSignatures.Identify(response.Body) is not null,
             _ => false,
         };
     }

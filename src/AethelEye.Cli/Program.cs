@@ -246,6 +246,11 @@ internal static class Program
             engagement.Browser.TimeoutSeconds = timeout;
         }
 
+        // The hidden-path catalog is intentionally broad. At the default 5 requests/second a
+        // full pass needs more than the 120-second engine default, so give this one check a
+        // longer budget unless the engagement file already set one.
+        engagement.SettingsFor("hidden-paths").TimeoutSeconds ??= 300;
+
         // CLI overrides appsettings/environment. Normalize here so both the .NET client and
         // Chromium receive a real proxy URL; "ipproxy:8080" alone parses as a URI scheme.
         if (!string.IsNullOrWhiteSpace(options.Proxy))
@@ -279,8 +284,9 @@ internal static class Program
 
         if (options.NameTokens.Count > 0)
         {
-            engagement.SettingsFor("backup").Options["names"] =
-                JsonSerializer.SerializeToElement(options.NameTokens);
+            var names = JsonSerializer.SerializeToElement(options.NameTokens);
+            engagement.SettingsFor("backup").Options["names"] = names;
+            engagement.SettingsFor("hidden-paths").Options["names"] = names;
         }
 
         if (options.Deep)
@@ -413,10 +419,12 @@ internal static class Program
         var known = checks.Select(check => check.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var hasSourceInput = engagement.Sources.Count > 0;
+        var hasDomainTargets = engagement.Targets.Any(IsDomainTarget);
         var requested = CheckModes.Expand(
             options.Mode,
             engagement.Targets.Count > 0,
-            hasSourceInput);
+            hasSourceInput,
+            hasDomainTargets);
 
         foreach (var id in requested)
         {
@@ -451,6 +459,34 @@ internal static class Program
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// True when the target string contains a hostname. An IP, CIDR or IP range has no
+    /// subdomains, so domain-only checks are dropped for those targets.
+    /// </summary>
+    private static bool IsDomainTarget(string value)
+    {
+        if (System.Net.IPAddress.TryParse(value.Trim('[', ']'), out _))
+        {
+            return false;
+        }
+
+        if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+        {
+            return !System.Net.IPAddress.TryParse(uri.Host.Trim('[', ']'), out _);
+        }
+
+        var slash = value.IndexOf('/');
+        if (slash > 0 && System.Net.IPAddress.TryParse(value[..slash], out _))
+        {
+            return false;
+        }
+
+        var dash = value.IndexOf('-');
+        return dash <= 0
+               || !System.Net.IPAddress.TryParse(value[..dash], out _)
+               || !System.Net.IPAddress.TryParse(value[(dash + 1)..], out _);
     }
 
     private static List<string> ValidateSources(IEnumerable<string> values)

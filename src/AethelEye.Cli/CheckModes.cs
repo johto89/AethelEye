@@ -15,7 +15,11 @@ public static class CheckModes
     private static readonly string[] ExternalChecks = ["github", "leaked-accounts"];
     private static readonly string[] AllWebChecks = [.. WebChecks, .. ExternalChecks];
 
-    public static IReadOnlySet<string> Expand(string? mode, bool hasWebTargets, bool hasSources)
+    public static IReadOnlySet<string> Expand(
+        string? mode,
+        bool hasWebTargets,
+        bool hasSources,
+        bool hasDomainTargets = true)
     {
         var text = string.IsNullOrWhiteSpace(mode) ? "all" : mode;
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -29,6 +33,7 @@ public static class CheckModes
                     if (hasWebTargets)
                     {
                         result.UnionWith(AllWebChecks);
+                        DropIpOnlyChecks(result, hasDomainTargets);
                     }
 
                     if (hasSources)
@@ -49,6 +54,7 @@ public static class CheckModes
                 case "targets":
                     RequireWeb(token, hasWebTargets);
                     result.UnionWith(WebChecks);
+                    DropIpOnlyChecks(result, hasDomainTargets);
                     break;
 
                 case "external":
@@ -87,6 +93,13 @@ public static class CheckModes
                 case "subdomains":
                 case "ct":
                     RequireWeb(token, hasWebTargets);
+                    if (!hasDomainTargets)
+                    {
+                        throw new ArgumentException(
+                            "Mode 'subdomains' needs a domain target. An IP address has no " +
+                            "subdomains to discover.");
+                    }
+
                     result.Add("subdomains");
                     break;
 
@@ -207,6 +220,22 @@ public static class CheckModes
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Domain-only checks are meaningless for an IP-only target: an IP address has no
+    /// subdomains and no domain name to resolve. RDAP still works for IP addresses, so it
+    /// stays. The check itself also skips, but dropping it avoids a pointless "Skipped" row.
+    /// </summary>
+    private static void DropIpOnlyChecks(HashSet<string> checks, bool hasDomainTargets)
+    {
+        if (hasDomainTargets)
+        {
+            return;
+        }
+
+        checks.Remove("subdomains");
+        checks.Remove("dns");
     }
 
     private static void RequireWeb(string mode, bool hasWebTargets)
