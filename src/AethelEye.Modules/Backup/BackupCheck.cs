@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Net;
 using System.Text;
 using AethelEye.Core.Abstractions;
 using AethelEye.Core.Http;
@@ -8,30 +7,14 @@ using AethelEye.Core.Models;
 namespace AethelEye.Modules.Backup;
 
 /// <summary>
-/// Finds backup archives and database dumps named after the application path or an explicit
-/// --name-token. Inspired by backup_finder.py. It never splits an IP into octets; for an IP it
-/// only tries the complete address (for example 1.1.1.1.zip).
+/// Probes only the name-based backup locations automatically: the application stem inside
+/// (/abc/abc.zip) and next to it (/abc.zip), plus the complete host inside
+/// (/abc/192.168.1.2.zip) and at the web root (/192.168.1.2.zip). No wrappers, sibling
+/// application names or host substrings are generated, and an IP address is never split into
+/// octets.
 /// </summary>
 public sealed class BackupCheck : ICheck
 {
-    private static readonly string[] Extensions =
-    [
-        ".zip", ".tar.gz", ".7z", ".sql", ".bak", ".old",
-    ];
-
-    private static readonly string[] Wrappers =
-    [
-        "{name}{ext}",
-        "{name}_backup{ext}",
-        "backup_{name}{ext}",
-    ];
-
-    private static readonly HashSet<string> IgnoredPathSegments = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "api", "v1", "v2", "v3", "static", "assets", "css", "js", "images", "img",
-        "index.html", "index.php", "index.htm",
-    };
-
     private static readonly HashSet<string> SqlContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "application/sql",
@@ -46,16 +29,20 @@ public sealed class BackupCheck : ICheck
     public string Name => "Backup archives and dumps";
 
     public string Description =>
-        "Probes backup archives named after the application path or --name-token; " +
-        "validates archives with magic bytes instead of trusting a 200 response.";
+        "Probes backup archives named after the application and the complete host inside the " +
+        "app and at fixed parent/root locations; validates archives with magic bytes.";
 
     public int Order => 31;
 
     public async Task<CheckResult> RunAsync(ICheckContext context)
     {
         var result = new CheckResult { CheckId = Id, CheckName = Name };
-        var (tokens, appTokens, nameTokens) = BuildTokens(context);
-        var candidates = BuildCandidates(context, tokens, appTokens, nameTokens);
+        var candidates = ApplicationBackupScope.Build(context).ToList();
+        var tokens = candidates
+            .Select(candidate => candidate.Token)
+            .Where(token => token.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var maxCandidates = Math.Clamp(context.Settings.GetInt("maxCandidates", 150), 1, 2000);
         if (candidates.Count > maxCandidates)
         {
@@ -68,10 +55,11 @@ public sealed class BackupCheck : ICheck
         result.Metrics["candidates"] = candidates.Count.ToString();
         result.Metrics["candidateUrls"] = string.Join(
             ", ",
-            candidates.Select(candidate => context.Target.RootUrl.TrimEnd('/') + candidate));
+            candidates.Select(candidate =>
+                context.Target.RootUrl.TrimEnd('/') + candidate.UrlPath));
         result.Notes.Add(
             $"Backup stems: {string.Join(", ", tokens)}. " +
-            "An IP address is used whole; it is never split into octets.");
+            "Only the application name inside, next to the application and the complete host are probed.");
         if (candidates.Count == 0)
         {
             result.Status = CheckStatus.NoRisk;
@@ -80,10 +68,18 @@ public sealed class BackupCheck : ICheck
         }
 
         var notes = new ConcurrentBag<string>();
-        var baselineUri = new Uri(
-            context.Target.RootUrl.TrimEnd('/') + $"/.aetheleye-{Guid.NewGuid():N}",
+        var appBaselineUri = new Uri(
+            context.Target.BaseUrl.TrimEnd('/') + $"/.aetheleye-{Guid.NewGuid():N}",
             UriKind.Absolute);
-        var baseline = await TryGetAsync(context, baselineUri, notes);
+        var appBaseline = await TryGetAsync(context, appBaselineUri, notes);
+        var siteBaseline = candidates.Any(candidate => candidate.SiteRoot)
+            ? await TryGetAsync(
+                context,
+                new Uri(
+                    context.Target.RootUrl.TrimEnd('/') + $"/.aetheleye-{Guid.NewGuid():N}",
+                    UriKind.Absolute),
+                notes)
+            : null;
         var findings = new ConcurrentBag<Finding>();
         var confirmed = 0;
         var protectedFiles = 0;
@@ -99,7 +95,7 @@ public sealed class BackupCheck : ICheck
             try
             {
                 var uri = new Uri(
-                    context.Target.RootUrl.TrimEnd('/') + candidate,
+                    context.Target.RootUrl.TrimEnd('/') + candidate.UrlPath,
                     UriKind.Absolute);
                 if (!context.Scope.IsAllowed(uri))
                 {
@@ -116,7 +112,7 @@ public sealed class BackupCheck : ICheck
                 if (response.StatusCode is 401 or 403)
                 {
                     Interlocked.Increment(ref protectedFiles);
-                    notes.Add($"{candidate}: HTTP {response.StatusCode} (protected)");
+                    notes.Add($"{candidate.UrlPath}: HTTP {response.StatusCode} (protected)");
                     return;
                 }
 
@@ -125,6 +121,7 @@ public sealed class BackupCheck : ICheck
                     return;
                 }
 
+                var baseline = candidate.SiteRoot ? siteBaseline : appBaseline;
                 if (baseline is not null && LooksLikeSoftNotFound(response, baseline))
                 {
                     return;
@@ -152,7 +149,7 @@ public sealed class BackupCheck : ICheck
                 findings.Add(new Finding
                 {
                     CheckId = Id,
-                    Title = $"{DescribeMagic(magic)} is exposed: {candidate}",
+                    Title = $"{DescribeMagic(magic)} is exposed: {candidate.UrlPath}",
                     Description =
                         "A backup archive or database dump is reachable. It can disclose source " +
                         "code, configuration, credentials and customer data.",
@@ -162,12 +159,12 @@ public sealed class BackupCheck : ICheck
                     Url = uri.ToString(),
                     Evidence = new Dictionary<string, string>
                     {
-                        ["candidate"] = candidate,
+                        ["candidate"] = candidate.UrlPath,
                         ["status"] = response.StatusCode.ToString(),
                         ["contentType"] = contentType,
                         ["bytes"] = response.Body.Length.ToString(),
                         ["magic"] = magic,
-                        ["token"] = TokenFor(candidate, tokens),
+                        ["token"] = candidate.Token,
                     },
                     Remediation =
                         "Remove the backup from the web root, block archive/dump extensions at the " +
@@ -176,7 +173,7 @@ public sealed class BackupCheck : ICheck
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
-                notes.Add($"{candidate}: {error.Message}");
+                notes.Add($"{candidate.UrlPath}: {error.Message}");
             }
             finally
             {
@@ -204,111 +201,6 @@ public sealed class BackupCheck : ICheck
             $"{confirmed} confirmed, {protectedFiles} protected.";
         result.Status = result.RiskFindingCount > 0 ? CheckStatus.Findings : CheckStatus.NoRisk;
         return result;
-    }
-
-    private static (List<string> Tokens, HashSet<string> AppTokens, HashSet<string> NameTokens) BuildTokens(ICheckContext context)
-    {
-        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var appTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var nameTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var host = context.Target.Host;
-        var isIp = IPAddress.TryParse(host, out _);
-
-        if (isIp)
-        {
-            // Never split an IP into 1, 1.1, 1.1.1. The full address is the only useful stem.
-            AddToken(tokens, host);
-        }
-        else
-        {
-            AddToken(tokens, host);
-            var labels = host.Split('.', StringSplitOptions.RemoveEmptyEntries);
-            if (labels.Length > 1)
-            {
-                AddToken(tokens, labels[0]);
-            }
-        }
-
-        var segments = context.Target.BaseUri.AbsolutePath
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(segment => segment.Length > 1 && !IgnoredPathSegments.Contains(segment))
-            .ToList();
-        if (segments.Count > 0)
-        {
-            AddToken(tokens, segments[^1]);
-            AddToken(appTokens, segments[^1]);
-            if (segments.Count > 1)
-            {
-                var fullPath = string.Join("-", segments);
-                AddToken(tokens, fullPath);
-                AddToken(appTokens, fullPath);
-            }
-        }
-
-        foreach (var name in context.Settings.GetStringList("names"))
-        {
-            AddToken(tokens, name);
-            AddToken(appTokens, name);
-            AddToken(nameTokens, name);
-        }
-
-        return (tokens.ToList(), appTokens, nameTokens);
-    }
-
-    private static List<string> BuildCandidates(
-        ICheckContext context,
-        IReadOnlyList<string> tokens,
-        HashSet<string> appTokens,
-        HashSet<string> nameTokens)
-    {
-        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var appPath = context.Target.BaseUri.AbsolutePath.TrimEnd('/');
-        foreach (var token in tokens)
-        {
-            foreach (var extension in Extensions)
-            {
-                foreach (var wrapper in Wrappers)
-                {
-                    var name = wrapper
-                        .Replace("{name}", token, StringComparison.Ordinal)
-                        .Replace("{ext}", extension, StringComparison.Ordinal);
-                    var file = "/" + name.TrimStart('/');
-                    candidates.Add(file);
-                    if (appPath.Length > 1 && appTokens.Contains(token))
-                    {
-                        candidates.Add(appPath + "/" + name.TrimStart('/'));
-                    }
-
-                    // A --name-token also names a directory, so probe /token/token.ext too.
-                    if (nameTokens.Contains(token))
-                    {
-                        candidates.Add("/" + token.TrimStart('/') + "/" + name.TrimStart('/'));
-                    }
-                }
-            }
-        }
-
-        return candidates.OrderBy(candidate => candidate, StringComparer.Ordinal).ToList();
-    }
-
-    private static void AddToken(HashSet<string> tokens, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        var cleaned = new string(value.Trim()
-            .Select(character =>
-                char.IsLetterOrDigit(character) || character is '.' or '-' or '_'
-                    ? character
-                    : '-')
-            .ToArray())
-            .Trim('-', '.', '_');
-        if (cleaned.Length > 1)
-        {
-            tokens.Add(cleaned);
-        }
     }
 
     private static async Task<HttpResponseData?> TryGetAsync(
@@ -389,8 +281,4 @@ public sealed class BackupCheck : ICheck
             || magic.Contains("database", StringComparison.OrdinalIgnoreCase)
             ? "Database dump"
             : "Backup archive";
-
-    private static string TokenFor(string candidate, IReadOnlyList<string> tokens) =>
-        tokens.FirstOrDefault(token =>
-            candidate.Contains(token, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
 }

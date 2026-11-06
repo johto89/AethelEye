@@ -48,9 +48,6 @@ public sealed class CliOptions
     /// <summary>Raw HTTP header block from Burp, applied to target requests for authenticated scans.</summary>
     public string? AuthFile { get; set; }
 
-    /// <summary>Extra filename stems for the backup check, for example the application name.</summary>
-    public List<string> NameTokens { get; } = [];
-
     /// <summary>
     /// Application paths applied to every range host and to root URLs, for example /abc,/xyz.
     /// </summary>
@@ -64,6 +61,9 @@ public sealed class CliOptions
 
     /// <summary>Public brand domain for GitHub/leak OSINT when the target is an internal host.</summary>
     public string? OsintDomain { get; set; }
+
+    /// <summary>Alias for <see cref="OsintDomain"/>; used by github/leaked-accounts only.</summary>
+    public string? NameToken { get; set; }
 
     /// <summary>Block headless-browser requests to hosts other than the target.</summary>
     public bool SameOriginOnly { get; set; }
@@ -116,6 +116,11 @@ public sealed class CliOptions
                 case "--domain":
                     options.OsintDomain = NextValue(args, ref index, argument);
                     break;
+                case "--name-token":
+                case "-name-token":
+                case "-n":
+                    options.NameToken = NextValue(args, ref index, argument);
+                    break;
                 case "--same-origin-only":
                 case "-same-origin-only":
                 case "--no-third-party":
@@ -157,11 +162,6 @@ public sealed class CliOptions
                 case "--auth":
                 case "-auth":
                     options.AuthFile = NextValue(args, ref index, argument);
-                    break;
-                case "--name-token":
-                case "-name-token":
-                case "-n":
-                    AddUrlSet(options.NameTokens, NextValue(args, ref index, argument));
                     break;
                 case "--path":
                 case "-path":

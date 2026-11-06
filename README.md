@@ -263,12 +263,12 @@ aetheleye --url example.com --mode all --exploited --out results\critical
 | `--concurrency <n>` | Parallel targets (default: 1). |
 | `--random-agent` | Rotate a browser User-Agent for every target request. |
 | `--authen <file>` | Raw Burp header block with `Cookie`/`Authorization` for authenticated scans. |
-| `--name-token <name>` | Extra backup filename stem (repeatable/comma-separated). Path tokens are automatic; an IP is never split into octets. |
 | `--evasion` | Low-and-slow, browser-like requests for authorized WAF/IDS testing. |
 | `--allow-uat` | UAT preset: private/loopback hosts, self-signed TLS and non-standard ports. Also restricts requests to the target origin. |
 | `--same-origin-only` | Restrict HTTP and headless-browser requests to the target origin (no third-party CDN/analytics traffic). |
 | `--allow-third-party` | Opt out of the strict same-origin policy that `--allow-uat` enables. |
 | `--osint-domain <d>` | Public brand domain used by `github`/`leaked-accounts` when the target is an internal host/IP. |
+| `--name-token <d>` | Alias for `--osint-domain` for `github`/`leaked-accounts`, for example `--name-token customer.com`. Hidden-path and backup names are derived automatically; this flag does not affect them. |
 | `--out <dir>` | Output directory. |
 | `--format <list>` | `text` (default) or `json`; comma-separated for both. |
 | `--exploited` | Keep only High/Critical findings in the report. |
@@ -321,8 +321,8 @@ aetheleye --url example.com --mode dns,rdap,subdomains,social
 # Security posture and sitemap only
 aetheleye --url example.com --mode security,sitemap
 
-# Backup archives only, with an explicit name token
-aetheleye --url http://10.0.0.5/xyz --mode backup --name-token xyz --allow-uat
+# Backup archives only; the application name and host are derived automatically
+aetheleye --url http://10.0.0.5/xyz --mode backup --allow-uat
 
 # Technology/CMS/default-page exposure only
 aetheleye --url example.com --mode technology
@@ -433,6 +433,9 @@ $common = @("--url", $site, "--allow-uat", "--no-banner", "--format", "text,json
 page cannot pull a third-party CDN, analytics script, another subdomain or another port. Use
 `--allow-third-party` only if that traffic is intended.
 `github` and `leaked-accounts` must run online (do not pass `--offline`).
+For those two modes, `--name-token customer.com` is accepted as an alias of
+`--osint-domain customer.com`, so an internal target such as `192.168.1.2` can be searched
+under its public brand domain.
 
 ### 3. Authenticated scan from a Burp header capture
 
@@ -459,15 +462,24 @@ text/JSON report. Only send headers for accounts and systems you are authorized 
 
 ### 4. Backup archives for an application under an IP path
 
-For `http://10.0.0.5/xyz`, the path segment `xyz` is used automatically as the backup stem.
-`--name-token` adds more stems. A named token is probed both as a file in the web root and as a
-directory (`--name-token merchant` tries `/merchant.zip` and `/merchant/merchant.zip`), because UAT
-sites often keep backups at the root even when the application lives under `/merchant/`. An IP
-address is used whole (`10.0.0.5.zip`); it is never split into `10.zip` or `10.0.zip`.
+The name-based backup check derives everything automatically and does not use `--name-token`
+(that flag is only an alias for the OSINT domain in `github`/`leaked-accounts`). For
+`http://10.0.0.5/xyz` it probes only these four groups:
+
+- application name inside: `/xyz/xyz.zip`, `/xyz/xyz.rar`, `/xyz/xyz.tar.gz`, ...
+- application name next to the application: `/xyz.zip`, `/xyz.rar`, `/xyz.tar.gz`, ...
+- complete host inside: `/xyz/10.0.0.5.zip`, `/xyz/10.0.0.5.rar`, ...
+- complete host at the web root: `/10.0.0.5.zip`, `/10.0.0.5.rar`, ...
+
+For `http://10.0.0.5/abc/find` the application stem is `find`, so it probes
+`/abc/find/find.*`, `/abc/find.zip`, `/abc/find.rar`, ..., plus `/abc/find/10.0.0.5.*` and
+`/10.0.0.5.*`. No wrappers, joined names (`abc-find`) or sibling application names
+(`/xyz.zip` when scanning `/abc`) are generated. An IP address is used whole; it is never
+split into `10.zip` or `10.0.zip`.
 
 ```powershell
 aetheleye --url http://10.0.0.5/xyz --mode backup --allow-uat
-aetheleye --url http://10.0.0.5/xyz --mode backup --name-token xyz,backup --allow-uat
+aetheleye --url http://10.0.0.5/xyz --mode hidden-paths --allow-uat
 ```
 
 ### 5. Internal UAT behind a proxy
@@ -640,12 +652,17 @@ aetheleye --url example.com --src .\src --mode all --offline
 }
 ```
 
-`hidden-paths` probes roughly 760 entries (762 for a host plus application-segment target).
+`hidden-paths` probes 708 catalog entries (732 for an application-segment target, which adds
+24 name-based archive probes: six for the application name inside, six next to it, six for
+the host inside and six at the web root).
 Set `maxPaths` (for example `500`) to cap request volume on a fragile or rate-limited target;
 the highest-severity entries are kept first. The CLI gives this check a 300-second budget by
-default so a full pass fits at 5 requests/second. It also derives backup names from the host
-and application segment, so `http://host/merchant` probes `/merchant.zip` and
-`/merchant/merchant.zip` as well as the static catalog.
+default so a full pass fits at 5 requests/second. It also probes the name-based backups
+automatically at four fixed locations, with no extra CLI option. `http://host/merchant`
+therefore checks `/merchant/merchant.zip`, `/merchant.zip`, `/merchant/host.zip` and
+`/host.zip`, while `http://host/abc/find` checks `/abc/find/find.zip`, `/abc/find.zip`,
+`/abc/find/host.zip` and `/host.zip`. No wrappers, joined names or sibling application names
+are generated, so scanning one application on a shared IP cannot cause unrelated name probes.
 
 Run it with:
 

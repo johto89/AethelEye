@@ -3,13 +3,15 @@ using System.Text.RegularExpressions;
 using AethelEye.Core.Abstractions;
 using AethelEye.Core.Http;
 using AethelEye.Core.Models;
+using AethelEye.Modules.Backup;
 
 namespace AethelEye.Modules.HiddenPaths;
 
 /// <summary>
-/// Probes a broad catalog of exposed files plus backup names derived from the host and
-/// application segment. A random-path baseline suppresses soft 404 pages, and each candidate
-/// needs a status, content-type, marker or magic-byte signature that makes sense for its type.
+/// Probes a broad catalog of exposed files under the target application plus backup archives
+/// derived from that same application path. A random-path baseline suppresses soft 404 pages,
+/// and each candidate needs a status, content-type, marker or magic-byte signature that makes
+/// sense for its type.
 /// </summary>
 public sealed class HiddenPathCheck : ICheck
 {
@@ -37,9 +39,11 @@ public sealed class HiddenPathCheck : ICheck
                 AllowHtml: true)).ToList()
             : HiddenPathCatalog.All.ToList();
 
-        // Backups are often named after the host or the application segment and placed at the
-        // site root, for example /merchant.zip for http://host/merchant. Probe those too, but
-        // only when the operator did not supply an explicit custom path list.
+        // Name-based backups are generated automatically in four places: the application stem
+        // inside (/merchant/merchant.zip) and next to it (/merchant.zip), plus the complete
+        // host inside (/merchant/192.168.1.2.zip) and at the web root (/192.168.1.2.zip).
+        // No sibling application names or wrappers are generated, and only when the operator
+        // did not supply an explicit custom path list.
         if (custom.Count == 0)
         {
             entries.AddRange(BuildDerivedBackupEntries(context));
@@ -68,7 +72,8 @@ public sealed class HiddenPathCheck : ICheck
             ? 1
             : Math.Clamp(context.Settings.GetInt("parallelism", 4), 1, 10);
         // Each application path is its own root: /abc/.git/HEAD and /xyz/.git/HEAD are separate.
-        // Derived backup names such as /merchant.zip live at the site root instead.
+        // Name-based backups inside the application are relative to that root; the sibling and
+        // host entries are flagged SiteRoot and resolved against the origin root instead.
         var appRoot = new Uri(context.Target.BaseUrl.TrimEnd('/') + "/", UriKind.Absolute);
         var siteRoot = new Uri(context.Target.RootUrl.TrimEnd('/') + "/", UriKind.Absolute);
         var baselinePath = $"/.aetheleye-{Guid.NewGuid():N}";
@@ -210,119 +215,49 @@ public sealed class HiddenPathCheck : ICheck
         }
     }
 
-    private static readonly HashSet<string> IgnoredDerivedSegments = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "api", "v1", "v2", "v3", "static", "assets", "css", "js", "images", "img",
-        "index.html", "index.php", "index.htm",
-    };
-
-    private static readonly string[] DerivedBackupExtensions =
-    [
-        ".zip", ".tar.gz", ".7z", ".sql", ".bak", ".old",
-    ];
-
-    private static readonly string[] DerivedBackupWrappers =
-    [
-        "{name}{ext}",
-        "{name}_backup{ext}",
-        "backup_{name}{ext}",
-    ];
-
     /// <summary>
-    /// Builds backup names from the host and application segment, mirroring backup_finder.py:
-    /// for http://host/merchant it probes /merchant.zip and /merchant/merchant.zip. An IP is
-    /// used whole and never split into octets. These entries are resolved against the site root.
+    /// Builds only the name-based backup entries automatically: the application stem inside
+    /// (/usertest/usertest.zip) and next to it (/usertest.zip), plus the complete host inside
+    /// (/usertest/192.168.1.2.zip) and at the web root (/192.168.1.2.zip). No wrappers or
+    /// sibling application names are generated.
     /// </summary>
     private static IEnumerable<HiddenPath> BuildDerivedBackupEntries(ICheckContext context)
     {
-        var tokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var appTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var host = context.Target.Host;
-        AddDerivedToken(tokens, host);
-        if (!System.Net.IPAddress.TryParse(host, out _))
+        var appPath = context.Target.BaseUri.AbsolutePath.TrimEnd('/');
+        foreach (var candidate in ApplicationBackupScope.Build(context))
         {
-            AddDerivedToken(tokens, host.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault());
-        }
-
-        var segments = context.Target.BaseUri.AbsolutePath
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(segment => segment.Length > 1 && !IgnoredDerivedSegments.Contains(segment))
-            .ToList();
-        var appPath = string.Empty;
-        if (segments.Count > 0)
-        {
-            appPath = string.Join("/", segments);
-            AddDerivedToken(tokens, segments[^1]);
-            AddDerivedToken(appTokens, segments[^1]);
-            if (segments.Count > 1)
+            if (candidate.SiteRoot)
             {
-                var joined = string.Join("-", segments);
-                AddDerivedToken(tokens, joined);
-                AddDerivedToken(appTokens, joined);
+                // /usertest.zip, /192.168.1.2.zip, ... resolved against the site root.
+                yield return new HiddenPath(
+                    candidate.UrlPath,
+                    Severity.High,
+                    HiddenPathValidation.Archive,
+                    null,
+                    "Backup archive named after the application or host is exposed.",
+                    SiteRoot: true);
+                continue;
             }
-        }
 
-        foreach (var name in context.Settings.GetStringList("names"))
-        {
-            AddDerivedToken(tokens, name);
-            AddDerivedToken(appTokens, name);
-        }
-
-        var entries = new List<HiddenPath>();
-        foreach (var token in tokens)
-        {
-            foreach (var extension in DerivedBackupExtensions)
+            // Inside the application: convert the absolute path back to an app-relative one.
+            var path = candidate.UrlPath;
+            if (appPath.Length > 0
+                && path.StartsWith(appPath, StringComparison.Ordinal))
             {
-                foreach (var wrapper in DerivedBackupWrappers)
-                {
-                    var name = wrapper
-                        .Replace("{name}", token, StringComparison.Ordinal)
-                        .Replace("{ext}", extension, StringComparison.Ordinal);
-                    entries.Add(DerivedEntry("/" + name, extension));
-                    if (appPath.Length > 0 && appTokens.Contains(token))
-                    {
-                        entries.Add(DerivedEntry("/" + appPath + "/" + name, extension));
-                    }
-                }
+                path = path[appPath.Length..];
             }
-        }
 
-        return entries.DistinctBy(entry => entry.Path, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static HiddenPath DerivedEntry(string path, string extension) =>
-        new(
-            path,
-            Severity.High,
-            extension switch
+            if (!path.StartsWith('/'))
             {
-                ".sql" => HiddenPathValidation.SqlDump,
-                ".bak" or ".old" => HiddenPathValidation.None,
-                _ => HiddenPathValidation.Archive,
-            },
-            null,
-            extension is ".bak" or ".old"
-                ? "Backup copy of the application is exposed."
-                : "Backup archive or dump named after the application is exposed.",
-            SiteRoot: true);
+                path = "/" + path;
+            }
 
-    private static void AddDerivedToken(HashSet<string> tokens, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return;
-        }
-
-        var cleaned = new string(value.Trim()
-            .Select(character =>
-                char.IsLetterOrDigit(character) || character is '.' or '-' or '_'
-                    ? character
-                    : '-')
-            .ToArray())
-            .Trim('-', '.', '_');
-        if (cleaned.Length > 1)
-        {
-            tokens.Add(cleaned);
+            yield return new HiddenPath(
+                path,
+                Severity.High,
+                HiddenPathValidation.Archive,
+                null,
+                "Backup archive named after the application is exposed.");
         }
     }
 

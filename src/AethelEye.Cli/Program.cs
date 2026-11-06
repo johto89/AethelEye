@@ -76,8 +76,6 @@ internal static class Program
           --random-agent      Rotate a browser User-Agent for every target request.
           --authen <file>     Raw headers copied from Burp (Cookie/Authorization) for an
                               authenticated scan. Values are never written to reports.
-          --name-token <name> Extra backup filename stem (repeatable/comma-separated).
-                              Path tokens are derived automatically; an IP is never split.
           --allow-uat         UAT/lab preset: allow private/loopback hosts, self-signed TLS
                               and non-standard ports. Does not bypass scope or authorization.
                               Also restricts requests to the target origin (no other host,
@@ -87,6 +85,8 @@ internal static class Program
           --allow-third-party Opt out of the strict same-origin policy under --allow-uat.
           --osint-domain <d>  Public brand domain for github/leaked-accounts when the scan
                               target is an internal host such as an IP or UAT name.
+          --name-token <d>    Alias for --osint-domain for github/leaked-accounts.
+                              Hidden-path and backup names are derived automatically.
           --out <dir>         Output directory (default: results)
           --format <list>     text,json (default: text)
           --exploited         Keep only High/Critical findings in the report.
@@ -218,6 +218,14 @@ internal static class Program
         {
             engagement.OsintDomain = options.OsintDomain.Trim();
         }
+        else if (!string.IsNullOrWhiteSpace(options.NameToken))
+        {
+            // Compatibility alias: --name-token <domain> for github/leaked-accounts.
+            // Hidden-path and backup names no longer use this value.
+            engagement.OsintDomain = options.NameToken
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .FirstOrDefault() ?? options.NameToken.Trim();
+        }
 
         if (options.Headless)
         {
@@ -280,13 +288,6 @@ internal static class Program
             {
                 engagement.Http.Headers[name] = value;
             }
-        }
-
-        if (options.NameTokens.Count > 0)
-        {
-            var names = JsonSerializer.SerializeToElement(options.NameTokens);
-            engagement.SettingsFor("backup").Options["names"] = names;
-            engagement.SettingsFor("hidden-paths").Options["names"] = names;
         }
 
         if (options.Deep)
